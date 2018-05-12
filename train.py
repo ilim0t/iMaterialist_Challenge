@@ -30,26 +30,35 @@ class Mymodel(chainer.Chain):
         y = self.predict(x)
         loss = F.sum((y-t) * (y-t)) / len(x)
         chainer.reporter.report({'loss': loss}, self)
-        #chainer.reporter.report({'accuracy': F.evaluation.accuracy.accuracy(y, t)}, self)
+        chainer.reporter.report({'accuracy': self.myaccuracy(y, t)}, self)
         return loss
+
+    def myaccuracy(self, y, t):
+        y_binary = (y.data > 0.5).astype(int)
+        #accuracy1はFalse Positiveが多すぎる
+        accuracy1 = sum([1 if all(i) else 0 for i in (y_binary == t)]) / len(y)  # batchのコードが完全一致している確率
+        accuracy2 = sum(sum((y_binary == t).astype(int))) / len(y) / len(y[0])  # すべてのbatchを通してlabelそれぞれの正解確率の平均
+        return accuracy2
         
     def predict(self, x):
         h1 = F.relu(self.l1(x))
         h2 = F.relu(self.l2(h1))
         return F.sigmoid(self.l3(h2))
 
+
 class Transform():
-    def __init__(self, args):
+    def __init__(self, args, json_data):
         self.label_variety = args.label_variety
         self.size = args.size
+        self.jsonData = json_data
 
     def __call__(self, num):
         img = Image.open('data/train_images/' + str(num + 1) + '.jpeg')
         img = img.resize((self.size, self.size), Image.ANTIALIAS)
-        arrayImg = np.asarray(img).transpose(2, 0, 1).astype(np.float32) / 255.
-        label = [int(i) for i in jsonData["annotations"][num]["labelId"]]
+        array_img = np.asarray(img).transpose(2, 0, 1).astype(np.float32) / 255.
+        label = [int(i) for i in self.jsonData["annotations"][num]["labelId"]]
         label = [1 if i in label else 0 for i in range(self.label_variety)]
-        return arrayImg, label
+        return array_img, label
 
 
 def main():
@@ -68,12 +77,12 @@ def main():
                         help='Frequency of taking a snapshot')
     parser.add_argument('--gpu', '-g', type=int, default=-1,
                         help='GPU ID (negative value indicates CPU)')
-    parser.add_argument('--unit', '-u', type=int, default=100,
+    parser.add_argument('--unit', '-u', type=int, default=256,
                         help='Number of units')
     parser.add_argument('--noplot', dest='plot', action='store_false',
                         help='Disable PlotReport extension'),
     parser.add_argument('--size', type=int, default=600),
-    parser.add_argument('--label_variety', type=int, default=1000),
+    parser.add_argument('--label_variety', type=int, default=228),
     parser.add_argument('--total_photo_num', type=int, default=2000)
     args = parser.parse_args()
 
@@ -84,9 +93,13 @@ def main():
     optimizer = chainer.optimizers.Adam()
     optimizer.setup(model)
 
+
     # Load the dataset
-    dataset = TransformDataset(range(args.total_photo_num), Transform(args))
-    train, test = chainer.datasets.split_dataset_random(dataset, int(args.label_variety * 0.8), seed=0)
+    with open('input/train.json', 'r') as f:
+        json_data = json.load(f)
+
+    dataset = TransformDataset(range(args.total_photo_num), Transform(args, json_data))
+    train, test = chainer.datasets.split_dataset_random(dataset, int(args.total_photo_num * 0.8), seed=0)  # 2割を検証用に
 
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
     test_iter = chainer.iterators.SerialIterator(test, args.batchsize,
@@ -94,7 +107,7 @@ def main():
 
     # Set up a trainer
     updater = training.updaters.StandardUpdater(
-        train_iter, optimizer, device=args.gpu)#, loss_func=F.softmax_cross_entropy)
+        train_iter, optimizer, device=args.gpu)
     trainer = training.Trainer(updater, (args.epoch, 'epoch'), out=args.out)
 
 
@@ -144,9 +157,6 @@ def main():
 
     #chainer.serializers.save_npz("resume.npz", model)#学習データの保存
 
-global jsonData
 
 if __name__ == '__main__':
-    with open('input/train.json', 'r') as f:
-        jsonData = json.load(f)
     main()

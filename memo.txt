@@ -36,4 +36,6 @@ train.jsonの中身
                 "133"
             ], 
             "imageId": "2"
-        }, 
+        },
+
+        trainデータ合計77GBと予測
