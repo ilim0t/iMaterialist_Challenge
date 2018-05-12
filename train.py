@@ -14,13 +14,13 @@ import argparse
 from chainer import training
 from chainer.training import extensions
 
+
 class Mymodel(chainer.Chain):
     data_folder = 'data/train_images/'
 
     def __init__(self, n_units, n_out):
         super(Mymodel, self).__init__()
         with self.init_scope():
-            pass
             self.l1 = L.Linear(None, n_units)  # n_in -> n_units
             self.l2 = L.Linear(None, n_units)  # n_units -> n_units
             self.l3 = L.Linear(None, n_out)  # n_units -> n_out
@@ -29,9 +29,7 @@ class Mymodel(chainer.Chain):
         y = self.predict(x)
         loss = F.sum((y-t) * (y-t)) / len(x)
         chainer.reporter.report({'loss': loss}, self)
-        if self.compute_accuracy:
-            self.accuracy = self.accfun(self.y, t)
-            reporter.report({'accuracy': self.accuracy}, self)
+        chainer.reporter.report({'accuracy': F.evaluation.accuracy.accuracy(y, t)}, self)
         return loss
         
     def predict(self, x):
@@ -42,9 +40,9 @@ class Mymodel(chainer.Chain):
 def transform(num):
     img = Image.open('data/train_images/' + str(num + 1) + '.jpeg')
     img = img.resize((600,600), Image.ANTIALIAS)
-    arrayImg = np.asarray(img).transpose(2,0,1).astype(np.float32)/255.    
+    arrayImg = np.asarray(img).transpose(2,0,1).astype(np.float32) / 255.
     label = [int(i) for i in jsonData["annotations"][num]["labelId"]]
-    label = [1 if i in label else 0 for i in  range(100)]#np型にする？
+    label = [1 if i in label else 0 for i in  range(100)]
     return arrayImg, label
 
 def main():
@@ -71,21 +69,17 @@ def main():
                         help='Disable PlotReport extension')
     args = parser.parse_args()
 
+    label_variety = 1000
+    dataset1 = TransformDataset(range(label_variety), transform)
 
-    dataset1 = TransformDataset(range(1000), transform)
-
-    model = Mymodel(100, 100)
+    model = Mymodel(args.unit, label_variety)
 
 
     # Setup an optimizer
     optimizer = chainer.optimizers.Adam()
     optimizer.setup(model)
-    chainer.links.Classifier
 
-    # Load the MNIST dataset
-    #train = lambda x: dataset(x)[0]
-    #test =  lambda x: dataset(x)[1]
-
+    # Load the dataset
     train, test = chainer.datasets.split_dataset_random(dataset1, int(1000 * 0.8), seed=0)
 
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
@@ -103,7 +97,7 @@ def main():
 
     # Dump a computational graph from 'loss' variable at the first iteration
     # The "main" refers to the target link of the "main" optimizer.
-    #trainer.extend(extensions.dump_graph('main/loss'))
+    trainer.extend(extensions.dump_graph('main/loss'))
 
     # Take a snapshot for each specified epoch
     frequency = args.epoch if args.frequency == -1 else max(1, args.frequency)
@@ -134,17 +128,15 @@ def main():
     # Print a progress bar to stdout
     trainer.extend(extensions.ProgressBar())
 
-    if 0 and args.resume:
+    if os.path.isfile(args.resume) and args.resume:
         # Resume from a snapshot
         chainer.serializers.load_npz(args.resume, model)
-        print("resume on")
 
 
     # Run the training
     trainer.run()
 
-    print("save resume")
-    chainer.serializers.save_npz("resume.npz", model)#学習データの保存
+    #chainer.serializers.save_npz("resume.npz", model)#学習データの保存
 
 global jsonData
 
