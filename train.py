@@ -30,7 +30,7 @@ class Mymodel(chainer.Chain):
         y = self.predict(x)
         loss = F.sum((y-t) * (y-t)) / len(x)
         chainer.reporter.report({'loss': loss}, self)
-        #chainer.reporter.report({'accuracy': F.evaluation.accuracy.accuracy(y, t)}, self)
+        chainer.reporter.report({'accuracy': F.evaluation.accuracy.accuracy(y, t)}, self)
         return loss
         
     def predict(self, x):
@@ -56,13 +56,11 @@ def main():
     parser = argparse.ArgumentParser(description='Chainer CIFAR example:')
     parser.add_argument('--batchsize', '-b', type=int, default=64,
                         help='Number of images in each mini-batch')
-    parser.add_argument('--learnrate', '-l', type=float, default=0.2,
-                        help='Learning rate for SGD')
     parser.add_argument('--epoch', '-e', type=int, default=3,
                         help='Number of sweeps over the dataset to train')
     parser.add_argument('--out', '-o', default='result',
                         help='Directory to output the result')
-    parser.add_argument('--resume', '-r', default='resume.npz',
+    parser.add_argument('--resume', '-r', default='',  # resume.npz
                         help='Resume the training from snapshot')
     parser.add_argument('--early-stopping', type=str,
                         help='Metric to watch for early stopping')
@@ -70,7 +68,7 @@ def main():
                         help='Frequency of taking a snapshot')
     parser.add_argument('--gpu', '-g', type=int, default=-1,
                         help='GPU ID (negative value indicates CPU)')
-    parser.add_argument('--unit', '-u', type=int, default=1000,
+    parser.add_argument('--unit', '-u', type=int, default=100,
                         help='Number of units')
     parser.add_argument('--noplot', dest='plot', action='store_false',
                         help='Disable PlotReport extension'),
@@ -78,17 +76,16 @@ def main():
     parser.add_argument('--label_variety', type=int, default=1000)
     args = parser.parse_args()
 
-    dataset1 = TransformDataset(range(args.label_variety), Transform(args))
 
     model = Mymodel(args.unit, args.label_variety)
-
 
     # Setup an optimizer
     optimizer = chainer.optimizers.Adam()
     optimizer.setup(model)
 
     # Load the dataset
-    train, test = chainer.datasets.split_dataset_random(dataset1, int(1000 * 0.8), seed=0)
+    dataset = TransformDataset(range(args.label_variety), Transform(args))
+    train, test = chainer.datasets.split_dataset_random(dataset, int(args.label_variety * 0.8), seed=0)
 
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
     test_iter = chainer.iterators.SerialIterator(test, args.batchsize,
