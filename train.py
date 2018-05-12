@@ -30,7 +30,7 @@ class Mymodel(chainer.Chain):
         y = self.predict(x)
         loss = F.sum((y-t) * (y-t)) / len(x)
         chainer.reporter.report({'loss': loss}, self)
-        chainer.reporter.report({'accuracy': F.evaluation.accuracy.accuracy(y, t)}, self)
+        #chainer.reporter.report({'accuracy': F.evaluation.accuracy.accuracy(y, t)}, self)
         return loss
         
     def predict(self, x):
@@ -56,7 +56,7 @@ def main():
     parser = argparse.ArgumentParser(description='Chainer CIFAR example:')
     parser.add_argument('--batchsize', '-b', type=int, default=64,
                         help='Number of images in each mini-batch')
-    parser.add_argument('--epoch', '-e', type=int, default=3,
+    parser.add_argument('--epoch', '-e', type=int, default=10,
                         help='Number of sweeps over the dataset to train')
     parser.add_argument('--out', '-o', default='result',
                         help='Directory to output the result')
@@ -106,7 +106,7 @@ def main():
 
     # Take a snapshot for each specified epoch
     frequency = args.epoch if args.frequency == -1 else max(1, args.frequency)
-    trainer.extend(extensions.snapshot(), trigger=(frequency, 'epoch'))
+    #trainer.extend(extensions.snapshot(), trigger=(frequency, 'epoch'))
 
     # Write a log of evaluation statistics for each epoch
     trainer.extend(extensions.LogReport())
