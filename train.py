@@ -73,7 +73,8 @@ def main():
     parser.add_argument('--noplot', dest='plot', action='store_false',
                         help='Disable PlotReport extension'),
     parser.add_argument('--size', type=int, default=600),
-    parser.add_argument('--label_variety', type=int, default=1000)
+    parser.add_argument('--label_variety', type=int, default=1000),
+    parser.add_argument('--total_photo_num', type=int, default=2000)
     args = parser.parse_args()
 
 
@@ -84,7 +85,7 @@ def main():
     optimizer.setup(model)
 
     # Load the dataset
-    dataset = TransformDataset(range(args.label_variety), Transform(args))
+    dataset = TransformDataset(range(args.total_photo_num), Transform(args))
     train, test = chainer.datasets.split_dataset_random(dataset, int(args.label_variety * 0.8), seed=0)
 
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
