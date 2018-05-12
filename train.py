@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 
 import chainer
@@ -29,21 +30,27 @@ class Mymodel(chainer.Chain):
         y = self.predict(x)
         loss = F.sum((y-t) * (y-t)) / len(x)
         chainer.reporter.report({'loss': loss}, self)
-        chainer.reporter.report({'accuracy': F.evaluation.accuracy.accuracy(y, t)}, self)
+        #chainer.reporter.report({'accuracy': F.evaluation.accuracy.accuracy(y, t)}, self)
         return loss
         
     def predict(self, x):
         h1 = F.relu(self.l1(x))
         h2 = F.relu(self.l2(h1))
         return F.sigmoid(self.l3(h2))
-            
-def transform(num):
-    img = Image.open('data/train_images/' + str(num + 1) + '.jpeg')
-    img = img.resize((600,600), Image.ANTIALIAS)
-    arrayImg = np.asarray(img).transpose(2,0,1).astype(np.float32) / 255.
-    label = [int(i) for i in jsonData["annotations"][num]["labelId"]]
-    label = [1 if i in label else 0 for i in  range(100)]
-    return arrayImg, label
+
+class Transform():
+    def __init__(self, args):
+        self.label_variety = args.label_variety
+        self.size = args.size
+
+    def __call__(self, num):
+        img = Image.open('data/train_images/' + str(num + 1) + '.jpeg')
+        img = img.resize((self.size, self.size), Image.ANTIALIAS)
+        arrayImg = np.asarray(img).transpose(2, 0, 1).astype(np.float32) / 255.
+        label = [int(i) for i in jsonData["annotations"][num]["labelId"]]
+        label = [1 if i in label else 0 for i in range(self.label_variety)]
+        return arrayImg, label
+
 
 def main():
     parser = argparse.ArgumentParser(description='Chainer CIFAR example:')
@@ -66,13 +73,14 @@ def main():
     parser.add_argument('--unit', '-u', type=int, default=1000,
                         help='Number of units')
     parser.add_argument('--noplot', dest='plot', action='store_false',
-                        help='Disable PlotReport extension')
+                        help='Disable PlotReport extension'),
+    parser.add_argument('--size', type=int, default=600),
+    parser.add_argument('--label_variety', type=int, default=1000)
     args = parser.parse_args()
 
-    label_variety = 1000
-    dataset1 = TransformDataset(range(label_variety), transform)
+    dataset1 = TransformDataset(range(args.label_variety), Transform(args))
 
-    model = Mymodel(args.unit, label_variety)
+    model = Mymodel(args.unit, args.label_variety)
 
 
     # Setup an optimizer
