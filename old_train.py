@@ -26,9 +26,10 @@ class Mymodel(chainer.Chain):
     def __init__(self, n_units, n_out):
         super(Mymodel, self).__init__()
         with self.init_scope():
-            self.l1 = L.Linear(None, n_units)  # n_in -> n_units
-            self.l2 = L.Linear(None, n_units)  # n_units -> n_units
-            self.l3 = L.Linear(None, n_out)  # n_units -> n_out
+            self.l1 = L.Linear(None, 33750)  # n_in -> n_units
+            self.l2 = L.Linear(None, 5600)  # n_units -> n_units
+            self.l3 = L.Linear(None, 1024)  # n_units -> n_out
+            self.l4 = L.Linear(None, n_out)  # n_units -> n_out
 
     def __call__(self, x, t):
         y = self.predict(x)
@@ -47,9 +48,10 @@ class Mymodel(chainer.Chain):
         return accuracy1, accuracy2
 
     def predict(self, x):
-        h1 = F.relu(self.l1(x))
-        h2 = F.relu(self.l2(h1))
-        return F.sigmoid(self.l3(h2))
+        h = F.relu(self.l1(x))
+        h = F.relu(self.l2(h))
+        h = F.relu(self.l3(h))
+        return F.sigmoid(self.l4(h))
 
 
 class Transform(object):
@@ -140,7 +142,7 @@ def main():
     #trainer.extend(extensions.snapshot(), trigger=(frequency, 'epoch'))
 
     # Write a log of evaluation statistics for each epoch
-    trainer.extend(extensions.LogReport(trigger=(20, 'iteration')))
+    trainer.extend(extensions.LogReport(trigger=(1, 'iteration')))
 
     # Save two plot images to the result dir
     if args.plot and extensions.PlotReport.available():
@@ -176,7 +178,7 @@ def main():
     # Run the training
     trainer.run()
 
-    #chainer.serializers.save_npz("resume.npz", model)#学習データの保存
+    chainer.serializers.save_npz("resume.npz", model)#学習データの保存
 
 
 if __name__ == '__main__':

@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import warnings
+
+warnings.filterwarnings('ignore', category=FutureWarning, message="Conversion of the second")
+warnings.filterwarnings('ignore', category=RuntimeWarning, message="invalid value encountered in sqrt")
 
 import chainer
 import chainer.functions as F
@@ -117,7 +121,7 @@ class Transform(object):
 
 def main():
     parser = argparse.ArgumentParser(description='Chainer CIFAR example:')
-    parser.add_argument('--batchsize', '-b', type=int, default=64,
+    parser.add_argument('--batchsize', '-b', type=int, default=32,
                         help='Number of images in each mini-batch')
     parser.add_argument('--epoch', '-e', type=int, default=10,
                         help='Number of sweeps over the dataset to train')
@@ -186,7 +190,7 @@ def main():
     #trainer.extend(extensions.snapshot(), trigger=(frequency, 'epoch'))
 
     # Write a log of evaluation statistics for each epoch
-    trainer.extend(extensions.LogReport(trigger=(1, 'elapsed_time')))
+    trainer.extend(extensions.LogReport(trigger=(1, 'iteration')))
 
     # Save two plot images to the result dir
     if args.plot and extensions.PlotReport.available():
@@ -222,7 +226,7 @@ def main():
     # Run the training
     trainer.run()
 
-    #chainer.serializers.save_npz("resume.npz", model)#学習データの保存
+    chainer.serializers.save_npz("resume.npz", model)#学習データの保存
 
 
 if __name__ == '__main__':
