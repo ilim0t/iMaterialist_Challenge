@@ -14,6 +14,17 @@ import argparse
 
 from chainer import training
 from chainer.training import extensions
+class Block(chainer.Chain):
+    def __init__(self, out_channels, ksize, stride=1, pad=1):
+        super(Block, self).__init__()
+        with self.init_scope():
+            self.conv = L.Convolution2D(None, out_channels, ksize, stride, pad)
+            self.bn = L.BatchNormalization(out_channels)
+
+    def __call__(self, x):
+        h = self.conv(x)
+        h = self.bn(h)
+        return F.relu(h)
 
 
 class Mymodel(chainer.Chain):
@@ -22,15 +33,27 @@ class Mymodel(chainer.Chain):
     def __init__(self, n_units, n_out):
         super(Mymodel, self).__init__()
         with self.init_scope():
-            self.l1 = L.Linear(None, n_units)  # n_in -> n_units
-            self.l2 = L.Linear(None, n_units)  # n_units -> n_units
-            self.l3 = L.Linear(None, n_out)  # n_units -> n_out
-        
+            self.block1_1 = Block(64, 8, 2, 2)  # n_in = args.size (300) ^ 2 * 3 = 270000 から
+            self.block1_2 = Block(64, 5)
+            self.block2_1 = Block(128, 3)
+            self.block2_2 = Block(128, 3)
+            self.block3_1 = Block(256, 3)
+            self.block3_2 = Block(256, 3)
+            self.block4_1 = Block(512, 3)
+            self.block4_2 = Block(256, 3)
+
+            self.fc1 = L.Linear(4096)
+            self.fc2 = L.Linear(2048)
+            # self.bn_fc1 = L.BatchNormalization(512)
+            self.fc3 = L.Linear(n_out)
+
     def __call__(self, x, t):
         y = self.predict(x)
         loss = F.sum((y-t) * (y-t)) / len(x)
         chainer.reporter.report({'loss': loss}, self)
-        chainer.reporter.report({'accuracy': self.myaccuracy(y, t)}, self)
+        accuracy = self.myaccuracy(y, t)
+        chainer.reporter.report({'accuracy': accuracy[0]}, self)
+        chainer.reporter.report({'accuracy2': accuracy[1]}, self)
         return loss
 
     def myaccuracy(self, y, t):
@@ -38,15 +61,45 @@ class Mymodel(chainer.Chain):
         #accuracy1はFalse Positiveが多すぎる
         accuracy1 = sum([1 if all(i) else 0 for i in (y_binary == t)]) / len(y)  # batchのコードが完全一致している確率
         accuracy2 = sum(sum((y_binary == t).astype(int))) / len(y) / len(y[0])  # すべてのbatchを通してlabelそれぞれの正解確率の平均
-        return accuracy2
-        
+        return accuracy1, accuracy2
+
     def predict(self, x):
-        h1 = F.relu(self.l1(x))
-        h2 = F.relu(self.l2(h1))
-        return F.sigmoid(self.l3(h2))
+
+        # 64 channel blocks:
+        h = self.block1_1(x)
+        h = F.dropout(h, ratio=0.3)
+        h = self.block1_2(h)
+        h = F.max_pooling_2d(h, ksize=2, stride=2)
+
+        # 128 channel blocks:
+        h = self.block2_1(h)
+        h = F.dropout(h, ratio=0.3)
+        h = self.block2_2(h)
+        h = F.max_pooling_2d(h, ksize=2, stride=2)
+
+        # 256 channel blocks:
+        h = self.block3_1(h)
+        h = F.dropout(h, ratio=0.3)
+        h = self.block3_2(h)
+        h = F.max_pooling_2d(h, ksize=2, stride=2)
+
+        # 512 channel blocks:
+        h = self.block4_1(h)
+        h = F.dropout(h, ratio=0.3)
+        h = self.block4_2(h)
+        h = F.max_pooling_2d(h, ksize=2, stride=2)
+
+        h = F.dropout(h, ratio=0.4)
+        h = self.fc1(h)
+        h = F.relu(h)
+        h = F.dropout(h, ratio=0.5)
+        h = self.fc2(h)
+        h = F.relu(h)
+        h = F.dropout(h, ratio=0.5)
+        return F.sigmoid(self.fc3(h))
 
 
-class Transform():
+class Transform(object):
     def __init__(self, args, json_data):
         self.label_variety = args.label_variety
         self.size = args.size
@@ -81,9 +134,9 @@ def main():
                         help='Number of units')
     parser.add_argument('--noplot', dest='plot', action='store_false',
                         help='Disable PlotReport extension'),
-    parser.add_argument('--size', type=int, default=600),
+    parser.add_argument('--size', type=int, default=300),
     parser.add_argument('--label_variety', type=int, default=228),
-    parser.add_argument('--total_photo_num', type=int, default=2000)
+    parser.add_argument('--total_photo_num', type=int, default='10000')
     args = parser.parse_args()
 
 
@@ -105,14 +158,24 @@ def main():
     test_iter = chainer.iterators.SerialIterator(test, args.batchsize,
                                                  repeat=False, shuffle=False)
 
+    stop_trigger = (args.epoch, 'epoch')
+    # Early stopping option
+    if args.early_stopping:
+        stop_trigger = chainer.training.triggers.EarlyStoppingTrigger(
+            monitor=args.early_stopping, verbose=True,
+            max_trigger=(args.epoch, 'epoch'))
+
     # Set up a trainer
     updater = training.updaters.StandardUpdater(
         train_iter, optimizer, device=args.gpu)
-    trainer = training.Trainer(updater, (args.epoch, 'epoch'), out=args.out)
-
+    trainer = training.Trainer(updater, stop_trigger, out=args.out)
 
     # Evaluate the model with the test dataset for each epoch
     trainer.extend(extensions.Evaluator(test_iter, model, device=args.gpu))
+
+    # Reduce the learning rate by half every 25 epochs.
+    # trainer.extend(extensions.ExponentialShift('lr', 0.5),
+    #                trigger=(25, 'epoch'))
 
     # Dump a computational graph from 'loss' variable at the first iteration
     # The "main" refers to the target link of the "main" optimizer.
@@ -134,6 +197,10 @@ def main():
             extensions.PlotReport(
                 ['main/accuracy', 'validation/main/accuracy'],
                 'epoch', file_name='accuracy.png'))
+        trainer.extend(
+            extensions.PlotReport(
+                ['main/accuracy2', 'validation/main/accuracy2'],
+                'epoch', file_name='accuracy2.png'))
 
     # Print selected entries of the log to stdout
     # Here "main" refers to the target link of the "main" optimizer again, and
@@ -142,7 +209,7 @@ def main():
     # either the updater or the evaluator.
     trainer.extend(extensions.PrintReport(
         ['epoch', 'main/loss', 'validation/main/loss',
-         'main/accuracy', 'validation/main/accuracy', 'elapsed_time']))
+         'main/accuracy', 'validation/main/accuracy', 'main/accuracy2', 'validation/main/accuracy2', 'elapsed_time']))
 
     # Print a progress bar to stdout
     trainer.extend(extensions.ProgressBar())
