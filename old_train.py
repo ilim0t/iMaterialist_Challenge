@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import warnings
+
+warnings.filterwarnings('ignore', category=FutureWarning, message="Conversion of the second")
+warnings.filterwarnings('ignore', category=RuntimeWarning, message="invalid value encountered in sqrt")
 
 import chainer
 import chainer.functions as F
@@ -42,6 +46,11 @@ class Mymodel(chainer.Chain):
         accuracy2 = sum(sum((y_binary == t).astype(int))) / len(y) / len(y[0])  # すべてのbatchを通してlabelそれぞれの正解確率の平均
         return accuracy1, accuracy2
 
+    def predict(self, x):
+        h1 = F.relu(self.l1(x))
+        h2 = F.relu(self.l2(h1))
+        return F.sigmoid(self.l3(h2))
+
 
 class Transform(object):
     data_folder = 'data/train_images/'
@@ -49,15 +58,14 @@ class Transform(object):
     def __init__(self, args, json_data):
         self.label_variety = args.label_variety
         self.size = args.size
-        self.jsonData = json_data
+        self.json_data = json_data
 
     def __call__(self, num):
         img = Image.open(self.data_folder + str(num + 1) + '.jpeg')
         img = img.resize((self.size, self.size), Image.ANTIALIAS)
         array_img = np.asarray(img).transpose(2, 0, 1).astype(np.float32) / 255.
-        label = [int(i) for i in self.jsonData["annotations"][num]["labelId"]]
+        label = [int(i) for i in self.json_data["annotations"][num]["labelId"]]
         label = [1 if i in label else 0 for i in range(self.label_variety)]
-        return array_img, label
         return array_img, label
 
 
@@ -67,7 +75,7 @@ def main():
                         help='Number of images in each mini-batch')
     parser.add_argument('--epoch', '-e', type=int, default=10,
                         help='Number of sweeps over the dataset to train')
-    parser.add_argument('--out', '-o', default='result',
+    parser.add_argument('--out', '-o', default='old_result',
                         help='Directory to output the result')
     parser.add_argument('--resume', '-r', default='',  # resume.npz
                         help='Resume the training from snapshot')
@@ -77,7 +85,7 @@ def main():
                         help='Frequency of taking a snapshot')
     parser.add_argument('--gpu', '-g', type=int, default=-1,
                         help='GPU ID (negative value indicates CPU)')
-    parser.add_argument('--unit', '-u', type=int, default=256,
+    parser.add_argument('--unit', '-u', type=int, default=512,
                         help='Number of units')
     parser.add_argument('--noplot', dest='plot', action='store_false',
                         help='Disable PlotReport extension'),
@@ -92,7 +100,6 @@ def main():
     # Setup an optimizer
     optimizer = chainer.optimizers.Adam()
     optimizer.setup(model)
-
 
     # Load the dataset
     with open('input/train.json', 'r') as f:
@@ -133,21 +140,21 @@ def main():
     #trainer.extend(extensions.snapshot(), trigger=(frequency, 'epoch'))
 
     # Write a log of evaluation statistics for each epoch
-    trainer.extend(extensions.LogReport())
+    trainer.extend(extensions.LogReport(trigger=(20, 'iteration')))
 
     # Save two plot images to the result dir
     if args.plot and extensions.PlotReport.available():
         trainer.extend(
             extensions.PlotReport(['main/loss', 'validation/main/loss'],
-                                  'epoch', file_name='loss.png'))
+                                  'epoch', trigger=(1, 'epoch'), file_name='loss.png'))
         trainer.extend(
             extensions.PlotReport(
                 ['main/accuracy', 'validation/main/accuracy'],
-                'epoch', file_name='accuracy.png'))
+                'epoch', trigger=(1, 'epoch'), file_name='accuracy.png'))
         trainer.extend(
             extensions.PlotReport(
                 ['main/accuracy2', 'validation/main/accuracy2'],
-                'epoch', file_name='accuracy2.png'))
+                'epoch', trigger=(1, 'epoch'), file_name='accuracy2.png'))
 
     # Print selected entries of the log to stdout
     # Here "main" refers to the target link of the "main" optimizer again, and

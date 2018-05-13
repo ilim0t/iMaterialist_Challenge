@@ -30,7 +30,7 @@ class Block(chainer.Chain):
 
 
 class Mymodel(chainer.Chain):
-    def __init__(self, n_units, n_out):
+    def __init__(self, n_out):
         super(Mymodel, self).__init__()
         with self.init_scope():
             self.block1_1 = Block(64, 8, 2, 2)  # n_in = args.size (300) ^ 2 * 3 = 270000 から
@@ -104,13 +104,13 @@ class Transform(object):
     def __init__(self, args, json_data):
         self.label_variety = args.label_variety
         self.size = args.size
-        self.jsonData = json_data
+        self.json_data = json_data
 
     def __call__(self, num):
         img = Image.open(self.data_folder + str(num + 1) + '.jpeg')
         img = img.resize((self.size, self.size), Image.ANTIALIAS)
         array_img = np.asarray(img).transpose(2, 0, 1).astype(np.float32) / 255.
-        label = [int(i) for i in self.jsonData["annotations"][num]["labelId"]]
+        label = [int(i) for i in self.json_data["annotations"][num]["labelId"]]
         label = [1 if i in label else 0 for i in range(self.label_variety)]
         return array_img, label
 
@@ -141,12 +141,11 @@ def main():
     args = parser.parse_args()
 
 
-    model = Mymodel(args.unit, args.label_variety)
+    model = Mymodel(args.label_variety)
 
     # Setup an optimizer
     optimizer = chainer.optimizers.Adam()
     optimizer.setup(model)
-
 
     # Load the dataset
     with open('input/train.json', 'r') as f:
@@ -187,21 +186,21 @@ def main():
     #trainer.extend(extensions.snapshot(), trigger=(frequency, 'epoch'))
 
     # Write a log of evaluation statistics for each epoch
-    trainer.extend(extensions.LogReport())
+    trainer.extend(extensions.LogReport(trigger=(1, 'elapsed_time')))
 
     # Save two plot images to the result dir
     if args.plot and extensions.PlotReport.available():
         trainer.extend(
             extensions.PlotReport(['main/loss', 'validation/main/loss'],
-                                  'epoch', file_name='loss.png'))
+                                  'epoch', trigger=(1, 'epoch'), file_name='loss.png'))
         trainer.extend(
             extensions.PlotReport(
                 ['main/accuracy', 'validation/main/accuracy'],
-                'epoch', file_name='accuracy.png'))
+                'epoch', trigger=(1, 'epoch'), file_name='accuracy.png'))
         trainer.extend(
             extensions.PlotReport(
                 ['main/accuracy2', 'validation/main/accuracy2'],
-                'epoch', file_name='accuracy2.png'))
+                'epoch', trigger=(1, 'epoch'), file_name='accuracy2.png'))
 
     # Print selected entries of the log to stdout
     # Here "main" refers to the target link of the "main" optimizer again, and
