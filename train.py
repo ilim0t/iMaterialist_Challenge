@@ -108,30 +108,29 @@ class Transform(object):
     def __init__(self, args, json_data):
         self.label_variety = args.label_variety
         self.size = args.size
-        self.json_data = json_data
+        self.json_data = [[int(j) for j in i["labelId"]] for i in json_data["annotations"][:args.total_photo_num]]
 
     def __call__(self, num):
         img = Image.open(self.data_folder + str(num + 1) + '.jpeg')
         img = img.resize((self.size, self.size), Image.ANTIALIAS)
         array_img = np.asarray(img).transpose(2, 0, 1).astype(np.float32) / 255.
-        label = [int(i) for i in self.json_data["annotations"][num]["labelId"]]
-        label = [1 if i in label else 0 for i in range(self.label_variety)]
+        label = [1 if i in self.json_data else 0 for i in range(self.label_variety)]
         return array_img, label
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Chainer CIFAR example:')
+    parser = argparse.ArgumentParser(description='Linear iMaterialist_Challenge:')
     parser.add_argument('--batchsize', '-b', type=int, default=32,
                         help='Number of images in each mini-batch')
-    parser.add_argument('--epoch', '-e', type=int, default=10,
+    parser.add_argument('--epoch', '-e', type=int, default=3,
                         help='Number of sweeps over the dataset to train')
     parser.add_argument('--out', '-o', default='result',
                         help='Directory to output the result')
-    parser.add_argument('--resume', '-r', default='',  # resume.npz
+    parser.add_argument('--resume', '-r', default='result/resume.npz',  # resume.npz
                         help='Resume the training from snapshot')
     parser.add_argument('--early-stopping', type=str,
                         help='Metric to watch for early stopping')
-    parser.add_argument('--frequency', '-f', type=int, default=-1,
+    parser.add_argument('--frequency', '-f', type=int, default=1,
                         help='Frequency of taking a snapshot')
     parser.add_argument('--gpu', '-g', type=int, default=-1,
                         help='GPU ID (negative value indicates CPU)')
@@ -187,7 +186,7 @@ def main():
 
     # Take a snapshot for each specified epoch
     frequency = args.epoch if args.frequency == -1 else max(1, args.frequency)
-    #trainer.extend(extensions.snapshot(), trigger=(frequency, 'epoch'))
+    trainer.extend(extensions.snapshot(), trigger=(frequency, 'epoch'))
 
     # Write a log of evaluation statistics for each epoch
     trainer.extend(extensions.LogReport(trigger=(1, 'iteration')))

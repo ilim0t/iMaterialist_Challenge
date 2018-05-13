@@ -26,9 +26,9 @@ class Mymodel(chainer.Chain):
     def __init__(self, n_units, n_out):
         super(Mymodel, self).__init__()
         with self.init_scope():
-            self.l1 = L.Linear(None, 33750)  # n_in -> n_units
-            self.l2 = L.Linear(None, 5600)  # n_units -> n_units
-            self.l3 = L.Linear(None, 1024)  # n_units -> n_out
+            self.l1 = L.Linear(None, 2048)  # n_in -> n_units
+            self.l2 = L.Linear(None, 2048)  # n_units -> n_units
+            self.l3 = L.Linear(None, 512)  # n_units -> n_out
             self.l4 = L.Linear(None, n_out)  # n_units -> n_out
 
     def __call__(self, x, t):
@@ -60,30 +60,30 @@ class Transform(object):
     def __init__(self, args, json_data):
         self.label_variety = args.label_variety
         self.size = args.size
-        self.json_data = json_data
+        self.json_data = [[int(j) for j in i["labelId"]] for i in json_data["annotations"][:args.total_photo_num]]
 
     def __call__(self, num):
         img = Image.open(self.data_folder + str(num + 1) + '.jpeg')
         img = img.resize((self.size, self.size), Image.ANTIALIAS)
         array_img = np.asarray(img).transpose(2, 0, 1).astype(np.float32) / 255.
-        label = [int(i) for i in self.json_data["annotations"][num]["labelId"]]
+        label = self.json_data
         label = [1 if i in label else 0 for i in range(self.label_variety)]
         return array_img, label
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Chainer CIFAR example:')
-    parser.add_argument('--batchsize', '-b', type=int, default=64,
+    parser = argparse.ArgumentParser(description='Linear iMaterialist_Challenge:')
+    parser.add_argument('--batchsize', '-b', type=int, default=128,
                         help='Number of images in each mini-batch')
-    parser.add_argument('--epoch', '-e', type=int, default=10,
+    parser.add_argument('--epoch', '-e', type=int, default=1,
                         help='Number of sweeps over the dataset to train')
     parser.add_argument('--out', '-o', default='old_result',
                         help='Directory to output the result')
-    parser.add_argument('--resume', '-r', default='',  # resume.npz
+    parser.add_argument('--resume', '-r', default='old_result/resume.npz',  # resume.npz
                         help='Resume the training from snapshot')
     parser.add_argument('--early-stopping', type=str,
                         help='Metric to watch for early stopping')
-    parser.add_argument('--frequency', '-f', type=int, default=-1,
+    parser.add_argument('--frequency', '-f', type=int, default=5,
                         help='Frequency of taking a snapshot')
     parser.add_argument('--gpu', '-g', type=int, default=-1,
                         help='GPU ID (negative value indicates CPU)')
@@ -139,7 +139,7 @@ def main():
 
     # Take a snapshot for each specified epoch
     frequency = args.epoch if args.frequency == -1 else max(1, args.frequency)
-    #trainer.extend(extensions.snapshot(), trigger=(frequency, 'epoch'))
+    #trainer.extend(extensions.snapshot(), trigger=(frequency, 'iteration'))
 
     # Write a log of evaluation statistics for each epoch
     trainer.extend(extensions.LogReport(trigger=(1, 'iteration')))
@@ -174,11 +174,10 @@ def main():
         # Resume from a snapshot
         chainer.serializers.load_npz(args.resume, model)
 
-
     # Run the training
     trainer.run()
 
-    chainer.serializers.save_npz("resume.npz", model)#学習データの保存
+    chainer.serializers.save_npz(args.resume, model)#学習データの保存
 
 
 if __name__ == '__main__':
