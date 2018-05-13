@@ -16,36 +16,15 @@ from chainer import training
 from chainer.training import extensions
 
 
-class Block(chainer.Chain):
-    def __init__(self, out_channels, ksize, stride=1, pad=1):
-        super(Block, self).__init__()
-        with self.init_scope():
-            self.conv = L.Convolution2D(None, out_channels, ksize, stride, pad)
-            self.bn = L.BatchNormalization(out_channels)
-
-    def __call__(self, x):
-        h = self.conv(x)
-        h = self.bn(h)
-        return F.relu(h)
-
-
 class Mymodel(chainer.Chain):
+    data_folder = 'data/train_images/'
+
     def __init__(self, n_units, n_out):
         super(Mymodel, self).__init__()
         with self.init_scope():
-            self.block1_1 = Block(64, 8, 2, 2)  # n_in = args.size (300) ^ 2 * 3 = 270000 から
-            self.block1_2 = Block(64, 5)
-            self.block2_1 = Block(128, 3)
-            self.block2_2 = Block(128, 3)
-            self.block3_1 = Block(256, 3)
-            self.block3_2 = Block(256, 3)
-            self.block4_1 = Block(512, 3)
-            self.block4_2 = Block(256, 3)
-
-            self.fc1 = L.Linear(4096)
-            self.fc2 = L.Linear(2048)
-            # self.bn_fc1 = L.BatchNormalization(512)
-            self.fc3 = L.Linear(n_out)
+            self.l1 = L.Linear(None, n_units)  # n_in -> n_units
+            self.l2 = L.Linear(None, n_units)  # n_units -> n_units
+            self.l3 = L.Linear(None, n_out)  # n_units -> n_out
 
     def __call__(self, x, t):
         y = self.predict(x)
@@ -63,40 +42,6 @@ class Mymodel(chainer.Chain):
         accuracy2 = sum(sum((y_binary == t).astype(int))) / len(y) / len(y[0])  # すべてのbatchを通してlabelそれぞれの正解確率の平均
         return accuracy1, accuracy2
 
-    def predict(self, x):
-        # 64 channel blocks:
-        h = self.block1_1(x)
-        h = F.dropout(h, ratio=0.3)
-        h = self.block1_2(h)
-        h = F.max_pooling_2d(h, ksize=2, stride=2)
-
-        # 128 channel blocks:
-        h = self.block2_1(h)
-        h = F.dropout(h, ratio=0.3)
-        h = self.block2_2(h)
-        h = F.max_pooling_2d(h, ksize=2, stride=2)
-
-        # 256 channel blocks:
-        h = self.block3_1(h)
-        h = F.dropout(h, ratio=0.3)
-        h = self.block3_2(h)
-        h = F.max_pooling_2d(h, ksize=2, stride=2)
-
-        # 512 channel blocks:
-        h = self.block4_1(h)
-        h = F.dropout(h, ratio=0.3)
-        h = self.block4_2(h)
-        h = F.max_pooling_2d(h, ksize=2, stride=2)
-
-        h = F.dropout(h, ratio=0.4)
-        h = self.fc1(h)
-        h = F.relu(h)
-        h = F.dropout(h, ratio=0.5)
-        h = self.fc2(h)
-        h = F.relu(h)
-        h = F.dropout(h, ratio=0.5)
-        return F.sigmoid(self.fc3(h))
-
 
 class Transform(object):
     data_folder = 'data/train_images/'
@@ -112,6 +57,7 @@ class Transform(object):
         array_img = np.asarray(img).transpose(2, 0, 1).astype(np.float32) / 255.
         label = [int(i) for i in self.jsonData["annotations"][num]["labelId"]]
         label = [1 if i in label else 0 for i in range(self.label_variety)]
+        return array_img, label
         return array_img, label
 
 
