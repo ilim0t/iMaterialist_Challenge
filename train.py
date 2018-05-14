@@ -112,7 +112,7 @@ class Transform(object):
         self.json_data = [[int(j) for j in i["labelId"]] for i in json_data["annotations"][:args.total_photo_num]]
 
     def __call__(self, num):
-        img_data = Image.open(self.data_folder + str(num + 1) + '.jpeg')
+        img_data = Image.open(self.data_folder + str(num + 1) + '.jpg')
         img_data = img_data.resize([self.size] * 2, Image.ANTIALIAS)
         array_img = np.asarray(img_data).transpose(2, 0, 1).astype(np.float32) / 255.
         label = [1 if i in self.json_data[num] else 0 for i in range(self.label_variety)]
@@ -197,19 +197,19 @@ def main():
     # Save two plot images to the result dir
     if args.plot and extensions.PlotReport.available():
         trainer.extend(
-            extensions.PlotReport(['loss', 'validation/loss'],
+            extensions.PlotReport(['main/loss', 'validation/main/loss'],
                                   'epoch', trigger=(1, 'iteration'), file_name='loss.png'))
         trainer.extend(
             extensions.PlotReport(
-                ['accuracy', 'validation/accuracy'],
+                ['main/accuracy', 'validation/main/accuracy'],
                 'epoch', trigger=(1, 'iteration'), file_name='accuracy.png'))
         trainer.extend(
             extensions.PlotReport(
-                ['accuracy2', 'validation/accuracy2'],
+                ['main/accuracy2', 'validation/main/accuracy2'],
                 'epoch', trigger=(1, 'iteration'), file_name='accuracy2.png'))
         trainer.extend(
             extensions.PlotReport(
-                ['frequent_error', 'frequent_error'],
+                ['main/frequent_error', 'validation/main/frequent_error'],
                 'epoch', trigger=(1, 'iteration'), file_name='frequent_error.png'))
 
     # Print selected entries of the log to stdout
@@ -226,8 +226,8 @@ def main():
     trainer.extend(extensions.ProgressBar())
 
     if os.path.isfile(args.resume) and args.resume:
-        pass
-        # chainer.serializers.load_npz("result/snapshot_iter_", model, path='updater/model:main/')
+        #pass
+        chainer.serializers.load_npz("result/snapshot_iter_60", model, path='updater/model:main/')
 
     # batch = test_iter.next()
     # from chainer.dataset import convert
