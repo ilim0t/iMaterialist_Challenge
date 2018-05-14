@@ -220,7 +220,7 @@ def main():
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'main/loss', 'validation/main/loss',
          'main/accuracy', 'validation/main/accuracy', 'main/accuracy2', 'validation/main/accuracy2',
-         'frequent_error', 'elapsed_time']))
+         'main/frequent_error', 'elapsed_time']))
 
     # Print a progress bar to stdout
     trainer.extend(extensions.ProgressBar())
