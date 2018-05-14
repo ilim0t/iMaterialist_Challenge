@@ -188,7 +188,7 @@ def main():
 
     # Take a snapshot for each specified epoch
     frequency = args.epoch if args.frequency == -1 else max(1, args.frequency)
-    trainer.extend(extensions.snapshot(), trigger=(frequency, 'iteraion'))
+    trainer.extend(extensions.snapshot(), trigger=(frequency, 'iteration'))
 
     # Write a log of evaluation statistics for each epoch
     trainer.extend(extensions.LogReport(trigger=(1, 'iteration')))
