@@ -31,7 +31,7 @@ class Mymodel(chainer.Chain):
             self.l3 = L.Linear(None, 512)  # n_units -> n_out
             self.l4 = L.Linear(None, n_out)  # n_units -> n_out
 
-    def __call__(self, x, t):
+    def loss_func(self, x, t):
         y = self.predict(x)
         loss = F.sum((y-t) * (y-t)) / len(x)
         chainer.reporter.report({'loss': loss}, self)
@@ -63,11 +63,10 @@ class Transform(object):
         self.json_data = [[int(j) for j in i["labelId"]] for i in json_data["annotations"][:args.total_photo_num]]
 
     def __call__(self, num):
-        img = Image.open(self.data_folder + str(num + 1) + '.jpeg')
-        img = img.resize((self.size, self.size), Image.ANTIALIAS)
-        array_img = np.asarray(img).transpose(2, 0, 1).astype(np.float32) / 255.
-        label = self.json_data
-        label = [1 if i in label else 0 for i in range(self.label_variety)]
+        img_data = Image.open(self.data_folder + str(num + 1) + '.jpeg')
+        img_data = img_data.resize([self.size] * 2, Image.ANTIALIAS)
+        array_img = np.asarray(img_data).transpose(2, 0, 1).astype(np.float32) / 255.
+        label = [1 if i in self.json_data[num] else 0 for i in range(self.label_variety)]
         return array_img, label
 
 
@@ -79,7 +78,7 @@ def main():
                         help='Number of sweeps over the dataset to train')
     parser.add_argument('--out', '-o', default='old_result',
                         help='Directory to output the result')
-    parser.add_argument('--resume', '-r', default='old_result/resume.npz',  # resume.npz
+    parser.add_argument('--resume', '-r', default='',  # 'old_result/resume.npz',  # resume.npz
                         help='Resume the training from snapshot')
     parser.add_argument('--early-stopping', type=str,
                         help='Metric to watch for early stopping')
@@ -123,11 +122,13 @@ def main():
 
     # Set up a trainer
     updater = training.updaters.StandardUpdater(
-        train_iter, optimizer, device=args.gpu)
+        train_iter, optimizer, device=args.gpu, loss_func=model.loss_func)
     trainer = training.Trainer(updater, stop_trigger, out=args.out)
 
     # Evaluate the model with the test dataset for each epoch
-    trainer.extend(extensions.Evaluator(test_iter, model, device=args.gpu))
+    evaluator = extensions.Evaluator(test_iter, model, device=args.gpu, eval_func=model.loss_func)
+    evaluator.trigger = 20, 'iteration'
+    trainer.extend(evaluator)
 
     # Reduce the learning rate by half every 25 epochs.
     # trainer.extend(extensions.ExponentialShift('lr', 0.5),
@@ -147,15 +148,15 @@ def main():
     # Save two plot images to the result dir
     if args.plot and extensions.PlotReport.available():
         trainer.extend(
-            extensions.PlotReport(['main/loss', 'validation/main/loss'],
+            extensions.PlotReport(['loss', 'validation/loss'],
                                   'epoch', trigger=(1, 'epoch'), file_name='loss.png'))
         trainer.extend(
             extensions.PlotReport(
-                ['main/accuracy', 'validation/main/accuracy'],
+                ['accuracy', 'validation/accuracy'],
                 'epoch', trigger=(1, 'epoch'), file_name='accuracy.png'))
         trainer.extend(
             extensions.PlotReport(
-                ['main/accuracy2', 'validation/main/accuracy2'],
+                ['accuracy2', 'validation/accuracy2'],
                 'epoch', trigger=(1, 'epoch'), file_name='accuracy2.png'))
 
     # Print selected entries of the log to stdout
@@ -164,15 +165,17 @@ def main():
     # Entries other than 'epoch' are reported by the Classifier link, called by
     # either the updater or the evaluator.
     trainer.extend(extensions.PrintReport(
-        ['epoch', 'main/loss', 'validation/main/loss',
+        ['epoch', 'iteration', 'main/loss', 'validation/main/loss',
          'main/accuracy', 'validation/main/accuracy', 'main/accuracy2', 'validation/main/accuracy2', 'elapsed_time']))
 
     # Print a progress bar to stdout
     trainer.extend(extensions.ProgressBar())
 
     if os.path.isfile(args.resume) and args.resume:
+        pass
         # Resume from a snapshot
-        chainer.serializers.load_npz(args.resume, model)
+        #chainer.serializers.load_npz(args.resume, model)
+        #chainer.serializers.load_npz("result/snapshot_iter_", model, path='updater/model:main/')
 
     # Run the training
     trainer.run()
