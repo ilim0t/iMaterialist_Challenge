@@ -108,14 +108,11 @@ def main():
         json_data = json.load(f)
 
     dataset = TransformDataset(range(args.total_photo_num), Transform(args, json_data))
-    train, test = chainer.datasets.split_dataset_random(dataset, int(args.total_photo_num * 0.8), seed=0)  # 2割を検証用に
+    train, test = chainer.datasets.split_dataset_random(dataset, int(args.total_photo_num * 0.8), seed=3110)  # 2割を検証用に
 
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
     test_iter = chainer.iterators.SerialIterator(test, args.batchsize,
                                                  repeat=False, shuffle=False)
-    print(train._data)
-    print(test._data)
-
     stop_trigger = (args.epoch, 'epoch')
     # Early stopping option
     if args.early_stopping:

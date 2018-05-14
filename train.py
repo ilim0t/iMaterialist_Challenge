@@ -58,6 +58,7 @@ class Mymodel(chainer.Chain):
         accuracy = self.myaccuracy(y, t)
         chainer.reporter.report({'accuracy': accuracy[0]}, self)
         chainer.reporter.report({'accuracy2': accuracy[1]}, self)
+        hainer.reporter.report({'frequent_error': accuracy[2]}, self)
         return loss
 
     def myaccuracy(self, y, t):
@@ -160,9 +161,6 @@ def main():
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
     test_iter = chainer.iterators.SerialIterator(test, args.batchsize,
                                                  repeat=False, shuffle=False)
-
-    print(train._data)
-    print(test._data)
 
     stop_trigger = (args.epoch, 'epoch')
     # Early stopping option
