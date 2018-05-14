@@ -58,7 +58,7 @@ class Mymodel(chainer.Chain):
         accuracy = self.myaccuracy(y, t)
         chainer.reporter.report({'accuracy': accuracy[0]}, self)
         chainer.reporter.report({'accuracy2': accuracy[1]}, self)
-        hainer.reporter.report({'frequent_error': accuracy[2]}, self)
+        chainer.reporter.report({'frequent_error': accuracy[2]}, self)
         return loss
 
     def myaccuracy(self, y, t):
