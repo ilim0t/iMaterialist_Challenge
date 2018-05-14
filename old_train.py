@@ -38,14 +38,15 @@ class Mymodel(chainer.Chain):
         accuracy = self.myaccuracy(y, t)
         chainer.reporter.report({'accuracy': accuracy[0]}, self)
         chainer.reporter.report({'accuracy2': accuracy[1]}, self)
+        chainer.reporter.report({'frequent_error': accuracy[2]}, self)
         return loss
 
     def myaccuracy(self, y, t):
         y_binary = (y.data > 0.5).astype(int)
         #accuracy1はFalse Positiveが多すぎる
         accuracy1 = sum([1 if all(i) else 0 for i in (y_binary == t)]) / len(y)  # batchのコードが完全一致している確率
-        accuracy2 = sum(sum((y_binary == t).astype(int))) / len(y) / len(y[0])  # すべてのbatchを通してlabelそれぞれの正解確率の平均
-        return accuracy1, accuracy2
+        accuracy2 = np.sum((y_binary == t).astype(int)) / len(y) / len(y[0])  # すべてのbatchを通してlabelそれぞれの正解確率の平均
+        return accuracy1, accuracy2, np.sum((y_binary != t).astype(int), 0).argsort()[-1] + 1
 
     def predict(self, x):
         h = F.relu(self.l1(x))
@@ -112,6 +113,8 @@ def main():
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
     test_iter = chainer.iterators.SerialIterator(test, args.batchsize,
                                                  repeat=False, shuffle=False)
+    print(train._data)
+    print(test._data)
 
     stop_trigger = (args.epoch, 'epoch')
     # Early stopping option
@@ -158,6 +161,10 @@ def main():
             extensions.PlotReport(
                 ['accuracy2', 'validation/accuracy2'],
                 'epoch', trigger=(1, 'epoch'), file_name='accuracy2.png'))
+        trainer.extend(
+            extensions.PlotReport(
+                ['frequent_error', 'frequent_error'],
+                'epoch', trigger=(1, 'epoch'), file_name='frequent_error.png'))
 
     # Print selected entries of the log to stdout
     # Here "main" refers to the target link of the "main" optimizer again, and
@@ -166,7 +173,8 @@ def main():
     # either the updater or the evaluator.
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'main/loss', 'validation/main/loss',
-         'main/accuracy', 'validation/main/accuracy', 'main/accuracy2', 'validation/main/accuracy2', 'elapsed_time']))
+         'main/accuracy', 'validation/main/accuracy', 'main/accuracy2', 'validation/main/accuracy2',
+         'main/frequent_error', 'elapsed_time']))
 
     # Print a progress bar to stdout
     trainer.extend(extensions.ProgressBar())

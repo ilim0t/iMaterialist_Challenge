@@ -65,7 +65,7 @@ class Mymodel(chainer.Chain):
         #accuracy1はFalse Positiveが多すぎる
         accuracy1 = sum([1 if all(i) else 0 for i in (y_binary == t)]) / len(y)  # batchのコードが完全一致している確率
         accuracy2 = sum(sum((y_binary == t).astype(int))) / len(y) / len(y[0])  # すべてのbatchを通してlabelそれぞれの正解確率の平均
-        return accuracy1, accuracy2
+        return accuracy1, accuracy2, np.sum((y_binary != t).astype(int), 0).argsort()[-1] + 1
 
     def predict(self, x):
         # 64 channel blocks:
@@ -120,7 +120,7 @@ class Transform(object):
 
 def main():
     parser = argparse.ArgumentParser(description='Linear iMaterialist_Challenge:')
-    parser.add_argument('--batchsize', '-b', type=int, default=32,
+    parser.add_argument('--batchsize', '-b', type=int, default=40,
                         help='Number of images in each mini-batch')
     parser.add_argument('--epoch', '-e', type=int, default=1,
                         help='Number of sweeps over the dataset to train')
@@ -130,7 +130,7 @@ def main():
                         help='Resume the training from snapshot')
     parser.add_argument('--early-stopping', type=str,
                         help='Metric to watch for early stopping')
-    parser.add_argument('--frequency', '-f', type=int, default=5,
+    parser.add_argument('--frequency', '-f', type=int, default=20,
                         help='Frequency of taking a snapshot')
     parser.add_argument('--gpu', '-g', type=int, default=-1,
                         help='GPU ID (negative value indicates CPU)')
@@ -155,18 +155,21 @@ def main():
         json_data = json.load(f)
 
     dataset = TransformDataset(range(args.total_photo_num), Transform(args, json_data))
-    train, test = chainer.datasets.split_dataset_random(dataset, int(args.total_photo_num * 0.8), seed=0)  # 2割を検証用に
+    train, test = chainer.datasets.split_dataset_random(dataset, int(args.total_photo_num * 0.8), seed=3110)  # 2割を検証用に
 
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
     test_iter = chainer.iterators.SerialIterator(test, args.batchsize,
                                                  repeat=False, shuffle=False)
+
+    print(train._data)
+    print(test._data)
 
     stop_trigger = (args.epoch, 'epoch')
     # Early stopping option
     if args.early_stopping:
         stop_trigger = chainer.training.triggers.EarlyStoppingTrigger(
             monitor=args.early_stopping, verbose=True,
-            max_trigger=(args.epoch, 'iteration'))
+            max_trigger=(args.epoch, 'epoch'))
 
     # Set up a trainer
     updater = training.updaters.StandardUpdater(
@@ -175,7 +178,7 @@ def main():
 
     # Evaluate the model with the test dataset for each epoch
     evaluator = extensions.Evaluator(test_iter, model, device=args.gpu, eval_func=model.loss_func)
-    evaluator.trigger = 3, 'iteration'
+    evaluator.trigger = 50, 'iteration'
     trainer.extend(evaluator)
 
     # Reduce the learning rate by half every 25 epochs.
@@ -197,15 +200,19 @@ def main():
     if args.plot and extensions.PlotReport.available():
         trainer.extend(
             extensions.PlotReport(['loss', 'validation/loss'],
-                                  'epoch', trigger=(1, 'epoch'), file_name='loss.png'))
+                                  'epoch', trigger=(1, 'iteration'), file_name='loss.png'))
         trainer.extend(
             extensions.PlotReport(
                 ['accuracy', 'validation/accuracy'],
-                'epoch', trigger=(1, 'epoch'), file_name='accuracy.png'))
+                'epoch', trigger=(1, 'iteration'), file_name='accuracy.png'))
         trainer.extend(
             extensions.PlotReport(
                 ['accuracy2', 'validation/accuracy2'],
-                'epoch', trigger=(1, 'epoch'), file_name='accuracy2.png'))
+                'epoch', trigger=(1, 'iteration'), file_name='accuracy2.png'))
+        trainer.extend(
+            extensions.PlotReport(
+                ['frequent_error', 'frequent_error'],
+                'epoch', trigger=(1, 'iteration'), file_name='frequent_error.png'))
 
     # Print selected entries of the log to stdout
     # Here "main" refers to the target link of the "main" optimizer again, and
@@ -214,7 +221,8 @@ def main():
     # either the updater or the evaluator.
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'main/loss', 'validation/main/loss',
-         'main/accuracy', 'validation/main/accuracy', 'main/accuracy2', 'validation/main/accuracy2', 'elapsed_time']))
+         'main/accuracy', 'validation/main/accuracy', 'main/accuracy2', 'validation/main/accuracy2',
+         'frequent_error', 'elapsed_time']))
 
     # Print a progress bar to stdout
     trainer.extend(extensions.ProgressBar())
