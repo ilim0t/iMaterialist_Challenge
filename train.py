@@ -58,9 +58,10 @@ class Mymodel(chainer.Chain):
     def loss_func(self, x, t):
         y = self.predict(x)
 
-        loss = np.sum(- np.log(np.absolute(x + t - 1)))
-        # labelが付いている(tが1)場合:   -log(x)
-        #      付いていない(tが0)場合:   -log(1-x)
+        loss = np.sum(- np.log(np.absolute(y + t - 1))) / len(x)
+        # labelが付いている(t_が1)場合:   -log(y_)
+        #      付いていない(t_が0)場合:   -log(1-y_)     ここでt_,y_ はx, yの要素
+        # 以上の総和をバッチサイズで割る
 
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y, t)
@@ -112,7 +113,7 @@ class Transform(object):
     def __init__(self, args, json_data):
         self.label_variety = args.label_variety
         self.size = args.size
-        self.json_data = [[int(j) for j in i["labelId"]] for i in json_data["annotations"][:args.total_photo_num]]
+        self.json_data = json_data
         self.data_folder = 'data/' + args.object + '_images/'
 
     def __call__(self, num):
@@ -162,7 +163,7 @@ def main():
     optimizer.setup(model)
 
     with open('input/train.json', 'r') as f:
-        json_data = json.load(f)
+        json_data = np.array([[int(j) for j in i["labelId"]] for i in json.load(f)["annotations"][:args.total_photo_num]])
 
     dataset = TransformDataset(range(args.total_photo_num), Transform(args, json_data))
     train, test = chainer.datasets.split_dataset_random(dataset, int(args.total_photo_num * 0.8), seed=3110)
