@@ -226,8 +226,9 @@ def main():
     trainer.extend(extensions.ProgressBar())
 
     if os.path.isfile(args.resume) and args.resume:
-        #pass
-        chainer.serializers.load_npz("result/snapshot_iter_60", model, path='updater/model:main/')
+        pass
+    chainer.serializers.load_npz("result/snapshot_iter_60", trainer)
+        #chainer.serializers.load_npz("result/snapshot_iter_60", model, path='updater/model:main/')
 
     # batch = test_iter.next()
     # from chainer.dataset import convert
