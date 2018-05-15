@@ -15,6 +15,7 @@ import numpy as np
 from PIL import Image
 import json
 import argparse
+import math
 
 from chainer import training
 from chainer.training import extensions
@@ -53,7 +54,8 @@ class Mymodel(chainer.Chain):
 
     def loss_func(self, x, t):
         y = self.predict(x)
-        loss = F.sum((y-t) * (y-t)) / len(x)
+        loss = np.sum(- np.log(np.absolute(x + t - 1)))
+        #loss = F.sum((y-t) * (y-t)) / len(x)
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.myaccuracy(y, t)
         chainer.reporter.report({'accuracy': accuracy[0]}, self)
@@ -227,8 +229,8 @@ def main():
 
     if os.path.isfile(args.resume) and args.resume:
         pass
-    chainer.serializers.load_npz("result/snapshot_iter_60", trainer)
-        #chainer.serializers.load_npz("result/snapshot_iter_60", model, path='updater/model:main/')
+        #chainer.serializers.load_npz("result/snapshot_iter_0", trainer)
+        #chainer.serializers.load_npz("result/snapshot_iter_0", model, path='updater/model:main/')
 
     # batch = test_iter.next()
     # from chainer.dataset import convert

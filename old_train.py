@@ -64,7 +64,7 @@ class Transform(object):
         self.json_data = [[int(j) for j in i["labelId"]] for i in json_data["annotations"][:args.total_photo_num]]
 
     def __call__(self, num):
-        img_data = Image.open(self.data_folder + str(num + 1) + '.jpeg')
+        img_data = Image.open(self.data_folder + str(num + 1) + '.jpg')
         img_data = img_data.resize([self.size] * 2, Image.ANTIALIAS)
         array_img = np.asarray(img_data).transpose(2, 0, 1).astype(np.float32) / 255.
         label = [1 if i in self.json_data[num] else 0 for i in range(self.label_variety)]
