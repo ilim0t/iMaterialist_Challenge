@@ -123,7 +123,7 @@ class Transform(object):
 
 def main():
     parser = argparse.ArgumentParser(description='Linear iMaterialist_Challenge:')
-    parser.add_argument('--batchsize', '-b', type=int, default=40,
+    parser.add_argument('--batchsize', '-b', type=int, default=128,
                         help='Number of images in each mini-batch')
     parser.add_argument('--epoch', '-e', type=int, default=1,
                         help='Number of sweeps over the dataset to train')
@@ -143,7 +143,7 @@ def main():
                         help='Disable PlotReport extension'),
     parser.add_argument('--size', type=int, default=300),
     parser.add_argument('--label_variety', type=int, default=228),
-    parser.add_argument('--total_photo_num', type=int, default=10000)
+    parser.add_argument('--total_photo_num', type=int, default=20000)
     args = parser.parse_args()
 
 
