@@ -153,7 +153,7 @@ def main():
                         help='Resume the training from snapshot')
     parser.add_argument('--early-stopping', type=str,
                         help='Metric to watch for early stopping')
-    parser.add_argument('--frequency', '-f', type=int, default=20,
+    parser.add_argument('--frequency', '-f', type=int, default=1,
                         help='Frequency of taking a snapshot')
     parser.add_argument('--gpu', '-g', type=int, default=-1,
                         help='GPU ID (negative value indicates CPU)')
@@ -227,7 +227,7 @@ def main():
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'main/loss', 'validation/main/loss',
          'main/accuracy', 'validation/main/accuracy',
-         'main/frequent_error', 'validation/main/frequent_error', 'main/acc_66', 'elapsed_time'
+         'main/freq_err', 'validation/main/freq_err', 'main/acc_66', 'elapsed_time'
          ]))
 
     trainer.extend(extensions.ProgressBar())
