@@ -170,7 +170,6 @@ def main():
     parser.add_argument('--object', type=str, default='train')  # train or test のどちらか選んだ方のデータを使用する
     args = parser.parse_args()
 
-
     model = Mymodel(args.label_variety)
     if args.gpu >= 0:
         # Make a specified GPU current
@@ -223,17 +222,14 @@ def main():
                 'epoch', trigger=(1, 'iteration'), file_name='accuracy.png'))
         trainer.extend(
             extensions.PlotReport(
-                ['main/accuracy2', 'validation/main/accuracy2'],
-                'epoch', trigger=(1, 'iteration'), file_name='accuracy2.png'))
-        trainer.extend(
-            extensions.PlotReport(
                 ['main/frequent_error', 'validation/main/frequent_error'],
                 'epoch', trigger=(1, 'iteration'), file_name='frequent_error.png'))
 
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'main/loss', 'validation/main/loss',
-         'main/accuracy', 'validation/main/accuracy', 'main/accuracy2', 'validation/main/accuracy2',
-         'main/frequent_error', 'main/acc_66', 'elapsed_time']))
+         'main/accuracy', 'validation/main/accuracy',
+         'main/frequent_error', 'validation/main/frequent_error', 'main/acc_66', 'elapsed_time'
+         ]))
 
     trainer.extend(extensions.ProgressBar())
 
