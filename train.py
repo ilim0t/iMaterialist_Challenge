@@ -1,6 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import matplotlib as mpl
+import platform
+
+# for rendering graph on remote server.
+# see: https://qiita.com/TomokIshii/items/3a26ee4453f535a69e9e
+if platform.system() != "Darwin":
+    mpl.use('Agg')
+
 import warnings
 
 warnings.filterwarnings('ignore', category=FutureWarning, message="Conversion of the second")
@@ -57,17 +65,28 @@ class Mymodel(chainer.Chain):
 
     def loss_func(self, x, t):
         y = self.predict(x)
-        loss = F.bernoulli_nll(t, y)
+
+        # loss = F.sigmoid_cross_entropy(y, t)
+        loss = F.bernoulli_nll(t.astype("f"), y) / len(y)
+        # labelが付いている(t_が1)場合:   -log(y_)       y_は0となるかも?
+        #      付いていない(t_が0)場合:   -log(1-y_)     ここでt_,y_ はx, yの要素
+        # 以上の総和をバッチサイズで割る
+
         chainer.reporter.report({'loss': loss}, self)
-        accuracy = self.accuracy(y, t)
+        accuracy = self.accuracy(y.data, t)
         chainer.reporter.report({'accuracy': accuracy[0]}, self)  # dataひとつひとつのlabelが完全一致している確率
         chainer.reporter.report({'frequent_error': accuracy[1]}, self)  # batchの中で最も多く間違って判断したlabel
+        chainer.reporter.report({'acc_66': accuracy[2]}, self)  # 66番ラベルの正解率
         return loss
 
     def accuracy(self, y, t):
-        y_binary = (F.sigmoid(y).data > 0.5).astype(int)
+        y = chainer.cuda.to_cpu(y)
+        t = chainer.cuda.to_cpu(t)
+
+        y_binary = (y > 0).astype(int)
         accuracy1 = sum([1 if all(i) else 0 for i in (y_binary == t)]) / len(y)  # dataひとつひとつのlabelが完全一致している確率
-        return accuracy1, np.sum((y_binary != t).astype(int), 0).argsort()[-1] + 1
+        acc_66 = np.sum((y_binary[:, 66] == t[:, 66]).astype(int)) / len(y)
+        return accuracy1, np.sum((y_binary != t).astype(int), 0).argsort()[-1] + 1, acc_66
 
     def predict(self, x):
         # 64 channel blocks:
@@ -145,14 +164,17 @@ def main():
                         help='Number of units')
     parser.add_argument('--noplot', dest='plot', action='store_false',
                         help='Disable PlotReport extension'),
-    parser.add_argument('--size', type=int, default=300),  # 正規化する時の一辺のpx
+    parser.add_argument('--size', type=int, default=128),  # 正規化する時の一辺のpx
     parser.add_argument('--label_variety', type=int, default=228),  # 確認できたlabelの総数 この中で判断する
     parser.add_argument('--total_photo_num', type=int, default=10000),  # 使用する写真データの数
     parser.add_argument('--object', type=str, default='train')  # train or test のどちらか選んだ方のデータを使用する
     args = parser.parse_args()
 
-
     model = Mymodel(args.label_variety)
+    if args.gpu >= 0:
+        # Make a specified GPU current
+        chainer.cuda.get_device_from_id(args.gpu).use()
+        model.to_gpu()  # Copy the model to the GPU
 
     optimizer = chainer.optimizers.Adam()
     optimizer.setup(model)
@@ -206,7 +228,8 @@ def main():
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'main/loss', 'validation/main/loss',
          'main/accuracy', 'validation/main/accuracy',
-         'main/frequent_error', 'validation/main/frequent_error', 'elapsed_time']))
+         'main/frequent_error', 'validation/main/frequent_error', 'main/acc_66', 'elapsed_time'
+         ]))
 
     trainer.extend(extensions.ProgressBar())
 
