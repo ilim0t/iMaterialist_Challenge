@@ -57,9 +57,10 @@ class Mymodel(chainer.Chain):
 
     def loss_func(self, x, t):
         y = self.predict(x)
+        a = y + t - 1
 
-        loss = np.sum(- np.log(np.absolute(y + t - 1))) / len(x)
-        # labelが付いている(t_が1)場合:   -log(y_)
+        loss = F.sum(- F.log(a * a)) / len(x)
+        # labelが付いている(t_が1)場合:   -log(y_)       y_は0となるかも?
         #      付いていない(t_が0)場合:   -log(1-y_)     ここでt_,y_ はx, yの要素
         # 以上の総和をバッチサイズで割る
 
@@ -121,7 +122,7 @@ class Transform(object):
         img_data = img_data.resize([self.size] * 2, Image.ANTIALIAS)  # 画像を一定サイズに揃える
         array_img = np.asarray(img_data).transpose(2, 0, 1).astype(np.float32) / 255.  # データを整えて各値を0~1の間に収める
 
-        label = [1 if i in self.json_data[num] else 0 for i in range(self.label_variety)]
+        label = np.array([1 if i in self.json_data[num] else 0 for i in range(self.label_variety)])
         # すべてのlabel番号に対しlebelがついているならば1,そうでないならば0を入れたリスト
         #
         # 例: 1, 2, 10 のラベルがついている場合
@@ -152,7 +153,7 @@ def main():
                         help='Disable PlotReport extension'),
     parser.add_argument('--size', type=int, default=300),  # 正規化する時の一辺のpx
     parser.add_argument('--label_variety', type=int, default=228),  # 確認できたlabelの総数 この中で判断する
-    parser.add_argument('--total_photo_num', type=int, default=20000),  # 使用する写真データの数
+    parser.add_argument('--total_photo_num', type=int, default=10000),  # 使用する写真データの数
     parser.add_argument('--object', type=str, default='train')  # train or test のどちらか選んだ方のデータを使用する
     args = parser.parse_args()
 
