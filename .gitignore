@@ -29,6 +29,7 @@ Temporary Items
 
 
 data/train_images/*
+data/test_images/*
 result
 .idea/*
 *.swp

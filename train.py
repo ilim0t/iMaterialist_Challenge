@@ -12,6 +12,7 @@ if platform.system() != "Darwin":
 import warnings
 
 warnings.filterwarnings('ignore', category=FutureWarning, message="Conversion of the second")
+warnings.filterwarnings('ignore', category=RuntimeWarning, message="overflow encountered in exp")
 warnings.filterwarnings('ignore', category=RuntimeWarning, message="invalid value encountered in sqrt")
 
 import chainer
@@ -48,8 +49,8 @@ class Mymodel(chainer.Chain):
     def __init__(self, n_out):
         super(Mymodel, self).__init__()
         with self.init_scope():
-            self.block1_1 = Block(64, 8, 2, 2)  # n_in = args.size (300)^2 * 3 = 270000
-            self.block1_2 = Block(64, 5)
+            self.block1_1 = Block(64, 4, 2, 2)  # n_in = args.size (300)^2 * 3 = 270000
+            self.block1_2 = Block(64, 2)
             # self.block2_1 = Block(128, 3)
             # self.block2_2 = Block(128, 3)
             # self.block3_1 = Block(256, 3)
@@ -88,7 +89,7 @@ class Mymodel(chainer.Chain):
     def predict(self, x):
         # 64 channel blocks:
         h = self.block1_1(x)
-        h = F.dropout(h, ratio=0.3)
+        h = F.dropout(h, ratio=0.2)
         h = self.block1_2(h)
         h = F.max_pooling_2d(h, ksize=2, stride=2)
 
@@ -110,13 +111,13 @@ class Mymodel(chainer.Chain):
         # h = self.block4_2(h)
         # h = F.max_pooling_2d(h, ksize=2, stride=2)
 
-        h = F.dropout(h, ratio=0.4)
+        h = F.dropout(h, ratio=0.2)
         h = self.fc1(h)
         h = F.relu(h)
-        h = F.dropout(h, ratio=0.5)
+        h = F.dropout(h, ratio=0.2)
         h = self.fc2(h)
         h = F.relu(h)
-        h = F.dropout(h, ratio=0.5)  # dropout 多すぎる？
+        h = F.dropout(h, ratio=0.2)  # dropout 多すぎる？
         return self.fc3(h)
 
 
@@ -145,7 +146,7 @@ def main():
     parser = argparse.ArgumentParser(description='Linear iMaterialist_Challenge:')
     parser.add_argument('--batchsize', '-b', type=int, default=128,
                         help='Number of images in each mini-batch')
-    parser.add_argument('--epoch', '-e', type=int, default=1,
+    parser.add_argument('--epoch', '-e', type=int, default=10,
                         help='Number of sweeps over the dataset to train')
     parser.add_argument('--out', '-o', default='result',
                         help='Directory to output the result')
@@ -163,7 +164,7 @@ def main():
                         help='Disable PlotReport extension'),
     parser.add_argument('--size', type=int, default=128),  # 正規化する時の一辺のpx
     parser.add_argument('--label_variety', type=int, default=228),  # 確認できたlabelの総数 この中で判断する
-    parser.add_argument('--total_photo_num', type=int, default=10000),  # 使用する写真データの数
+    parser.add_argument('--total_photo_num', type=int, default=40000),  # 使用する写真データの数
     parser.add_argument('--object', type=str, default='train')  # train or test のどちらか選んだ方のデータを使用する
     args = parser.parse_args()
 
@@ -200,7 +201,7 @@ def main():
     trainer = training.Trainer(updater, stop_trigger, out=args.out)
 
     evaluator = extensions.Evaluator(test_iter, model, device=args.gpu, eval_func=model.loss_func)
-    evaluator.trigger = 50, 'iteration'
+    evaluator.trigger = 1, 'epoch'
     trainer.extend(evaluator)
 
     trainer.extend(extensions.dump_graph('main/loss'))
@@ -214,15 +215,15 @@ def main():
         trainer.extend(
             extensions.PlotReport(
                 ['main/loss', 'validation/main/loss'],
-                'epoch', trigger=(10, 'iteration'), file_name='loss.png'))
+                'epoch', trigger=(1, 'epoch'), file_name='loss.png'))
         trainer.extend(
             extensions.PlotReport(
                 ['main/accuracy', 'validation/main/accuracy'],
-                'epoch', trigger=(10, 'iteration'), file_name='accuracy.png'))
+                'epoch', trigger=(1, 'epoch'), file_name='accuracy.png'))
         trainer.extend(
             extensions.PlotReport(
                 ['main/frequent_error', 'validation/main/frequent_error'],
-                'epoch', trigger=(10, 'iteration'), file_name='frequent_error.png'))
+                'epoch', trigger=(1, 'epoch'), file_name='frequent_error.png'))
 
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'main/loss', 'validation/main/loss',
@@ -234,7 +235,7 @@ def main():
 
     if os.path.isfile(args.resume) and args.resume:
         pass
-        #chainer.serializers.load_npz("result/snapshot_iter_0", trainer)
+    #chainer.serializers.load_npz("result/snapshot_iter_63", trainer)
         #chainer.serializers.load_npz("result/snapshot_iter_0", model, path='updater/model:main/')
 
     # Run the training
