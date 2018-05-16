@@ -30,3 +30,8 @@ Temporary Items
 
 data/train_images/*
 result
+.idea/*
+*.swp
+old_result/*
+input/*
+.python-version

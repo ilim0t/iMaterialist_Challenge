@@ -66,16 +66,12 @@ class Mymodel(chainer.Chain):
     def loss_func(self, x, t):
         y = self.predict(x)
 
-        # loss = F.sigmoid_cross_entropy(y, t)
         loss = F.bernoulli_nll(t.astype("f"), y) / len(y)
-        # labelが付いている(t_が1)場合:   -log(y_)       y_は0となるかも?
-        #      付いていない(t_が0)場合:   -log(1-y_)     ここでt_,y_ はx, yの要素
-        # 以上の総和をバッチサイズで割る
 
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y.data, t)
         chainer.reporter.report({'accuracy': accuracy[0]}, self)  # dataひとつひとつのlabelが完全一致している確率
-        chainer.reporter.report({'frequent_error': accuracy[1]}, self)  # batchの中で最も多く間違って判断したlabel
+        chainer.reporter.report({'freq_err': accuracy[1]}, self)  # batchの中で最も多く間違って判断したlabel
         chainer.reporter.report({'acc_66': accuracy[2]}, self)  # 66番ラベルの正解率
         return loss
 
@@ -84,9 +80,10 @@ class Mymodel(chainer.Chain):
         t = chainer.cuda.to_cpu(t)
 
         y_binary = (y > 0).astype(int)
-        accuracy1 = sum([1 if all(i) else 0 for i in (y_binary == t)]) / len(y)  # dataひとつひとつのlabelが完全一致している確率
-        acc_66 = np.sum((y_binary[:, 66] == t[:, 66]).astype(int)) / len(y)
-        return accuracy1, np.sum((y_binary != t).astype(int), 0).argsort()[-1] + 1, acc_66
+        accuracy = sum([1 if all(i) else 0 for i in (y_binary == t)]) / len(y)  # dataひとつひとつのlabelが完全一致している確率
+        frequent_error = np.sum((y_binary != t).astype(int), 0).argsort()[-1] + 1  # batchの中で最も多く間違って判断したlabel
+        acc_66 = np.sum((y_binary[:, 65] == t[:, 65]).astype(int)) / len(y)  # 66番ラベルの正解率
+        return accuracy, frequent_error , acc_66
 
     def predict(self, x):
         # 64 channel blocks:
@@ -135,7 +132,7 @@ class Transform(object):
         img_data = img_data.resize([self.size] * 2, Image.ANTIALIAS)  # 画像を一定サイズに揃える
         array_img = np.asarray(img_data).transpose(2, 0, 1).astype(np.float32) / 255.  # データを整えて各値を0~1の間に収める
 
-        label = np.array([1 if i in self.json_data[num] else 0 for i in range(self.label_variety)])
+        label = np.array([1 if i in self.json_data[num] else 0 for i in range(1, self.label_variety + 1)])
         # すべてのlabel番号に対しlebelがついているならば1,そうでないならば0を入れたリスト
         #
         # 例: 1, 2, 10 のラベルがついている場合
@@ -171,6 +168,7 @@ def main():
     args = parser.parse_args()
 
     model = Mymodel(args.label_variety)
+
     if args.gpu >= 0:
         # Make a specified GPU current
         chainer.cuda.get_device_from_id(args.gpu).use()
@@ -180,10 +178,10 @@ def main():
     optimizer.setup(model)
 
     with open('input/train.json', 'r') as f:
-        json_data = np.array([[int(j) for j in i["labelId"]] for i in json.load(f)["annotations"][:args.total_photo_num]])
+        json_data = [[int(j) for j in i["labelId"]] for i in json.load(f)["annotations"][:args.total_photo_num]]
 
     dataset = TransformDataset(range(args.total_photo_num), Transform(args, json_data))
-    train, test = chainer.datasets.split_dataset_random(dataset, int(args.total_photo_num * 0.8), seed=3110)
+    train, test = chainer.datasets.split_dataset_random(dataset, int(args.total_photo_num * 0.8), seed=0)
     # 2割をvalidation用にとっておく
 
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
@@ -208,22 +206,23 @@ def main():
     trainer.extend(extensions.dump_graph('main/loss'))
 
     frequency = args.epoch if args.frequency == -1 else max(1, args.frequency)
-    trainer.extend(extensions.snapshot(), trigger=(frequency, 'iteration'))
+    trainer.extend(extensions.snapshot(), trigger=(frequency, 'epoch'))
 
     trainer.extend(extensions.LogReport(trigger=(1, 'iteration')))
 
     if args.plot and extensions.PlotReport.available():
         trainer.extend(
-            extensions.PlotReport(['main/loss', 'validation/main/loss'],
-                                  'epoch', trigger=(1, 'iteration'), file_name='loss.png'))
+            extensions.PlotReport(
+                ['main/loss', 'validation/main/loss'],
+                'epoch', trigger=(10, 'iteration'), file_name='loss.png'))
         trainer.extend(
             extensions.PlotReport(
                 ['main/accuracy', 'validation/main/accuracy'],
-                'epoch', trigger=(1, 'iteration'), file_name='accuracy.png'))
+                'epoch', trigger=(10, 'iteration'), file_name='accuracy.png'))
         trainer.extend(
             extensions.PlotReport(
                 ['main/frequent_error', 'validation/main/frequent_error'],
-                'epoch', trigger=(1, 'iteration'), file_name='frequent_error.png'))
+                'epoch', trigger=(10, 'iteration'), file_name='frequent_error.png'))
 
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'main/loss', 'validation/main/loss',
