@@ -57,13 +57,7 @@ class Mymodel(chainer.Chain):
 
     def loss_func(self, x, t):
         y = self.predict(x)
-        a = y + t - 1
-
-        loss = F.sum(- F.log(a * a)) / len(x)
-        # labelが付いている(t_が1)場合:   -log(y_)       y_は0となるかも?
-        #      付いていない(t_が0)場合:   -log(1-y_)     ここでt_,y_ はx, yの要素
-        # 以上の総和をバッチサイズで割る
-
+        loss = F.bernoulli_nll(t, y)
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y, t)
         chainer.reporter.report({'accuracy': accuracy[0]}, self)  # dataひとつひとつのlabelが完全一致している確率
@@ -71,7 +65,7 @@ class Mymodel(chainer.Chain):
         return loss
 
     def accuracy(self, y, t):
-        y_binary = (y.data > 0.5).astype(int)
+        y_binary = (F.sigmoid(y).data > 0.5).astype(int)
         accuracy1 = sum([1 if all(i) else 0 for i in (y_binary == t)]) / len(y)  # dataひとつひとつのlabelが完全一致している確率
         return accuracy1, np.sum((y_binary != t).astype(int), 0).argsort()[-1] + 1
 
@@ -107,7 +101,7 @@ class Mymodel(chainer.Chain):
         h = self.fc2(h)
         h = F.relu(h)
         h = F.dropout(h, ratio=0.5)  # dropout 多すぎる？
-        return F.sigmoid(self.fc3(h))
+        return self.fc3(h)
 
 
 class Transform(object):
@@ -206,17 +200,13 @@ def main():
                 'epoch', trigger=(1, 'iteration'), file_name='accuracy.png'))
         trainer.extend(
             extensions.PlotReport(
-                ['main/accuracy2', 'validation/main/accuracy2'],
-                'epoch', trigger=(1, 'iteration'), file_name='accuracy2.png'))
-        trainer.extend(
-            extensions.PlotReport(
                 ['main/frequent_error', 'validation/main/frequent_error'],
                 'epoch', trigger=(1, 'iteration'), file_name='frequent_error.png'))
 
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'main/loss', 'validation/main/loss',
-         'main/accuracy', 'validation/main/accuracy', 'main/accuracy2', 'validation/main/accuracy2',
-         'main/frequent_error', 'elapsed_time']))
+         'main/accuracy', 'validation/main/accuracy',
+         'main/frequent_error', 'validation/main/frequent_error', 'elapsed_time']))
 
     trainer.extend(extensions.ProgressBar())
 
