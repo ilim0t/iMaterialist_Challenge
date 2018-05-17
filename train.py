@@ -1,13 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import matplotlib as mpl
-import platform
-
-# for rendering graph on remote server.
-# see: https://qiita.com/TomokIshii/items/3a26ee4453f535a69e9e
-if platform.system() != "Darwin":
-    mpl.use('Agg')
 
 import warnings
 
@@ -19,21 +12,27 @@ import chainer
 import chainer.functions as F
 import chainer.links as L
 from chainer.datasets import TransformDataset
-import os
-import numpy as np
-from PIL import Image
-import json
-import argparse
-
 from chainer import training
 from chainer.training import extensions
+
+import numpy as np
+import argparse
+
+import os
+import json
+from PIL import Image
+
+import matplotlib as mpl
+import platform
+
+
 
 
 class Block(chainer.Chain):
     """
     畳み込み層
     """
-    def __init__(self, out_channels, ksize, stride=1, pad=1):
+    def __init__(self, out_channels, ksize, stride=1, pad=0):
         super(Block, self).__init__()
         with self.init_scope():
             self.conv = L.Convolution2D(None, out_channels, ksize, stride, pad)
@@ -49,14 +48,9 @@ class Mymodel(chainer.Chain):
     def __init__(self, n_out):
         super(Mymodel, self).__init__()
         with self.init_scope():
-            self.block1_1 = Block(64, 4, 2, 2)  # n_in = args.size (300)^2 * 3 = 270000
-            self.block1_2 = Block(64, 2)
-            # self.block2_1 = Block(128, 3)
-            # self.block2_2 = Block(128, 3)
-            # self.block3_1 = Block(256, 3)
-            # self.block3_2 = Block(256, 3)
-            # self.block4_1 = Block(512, 3)
-            # self.block4_2 = Block(256, 3)
+            self.block1 = Block(16, 2)  # n_in = args.size (300)^2 * 3 = 270000
+            self.block2 = Block(32, 2)
+            self.block3 = Block(64, 2)
 
             self.fc1 = L.Linear(512)
             self.fc2 = L.Linear(512)
@@ -68,6 +62,9 @@ class Mymodel(chainer.Chain):
         y = self.predict(x)
 
         loss = F.bernoulli_nll(t.astype("f"), y) / len(y)
+
+        t_card = F.sum(t.astype("f"), axis=1)
+        #loss = F.sum(? / t_card / (t.shape[1] - t_card))
 
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y.data, t)
@@ -88,37 +85,16 @@ class Mymodel(chainer.Chain):
 
     def predict(self, x):
         # 64 channel blocks:
-        h = self.block1_1(x)
-        h = F.dropout(h, ratio=0.2)
-        h = self.block1_2(h)
-        h = F.max_pooling_2d(h, ksize=2, stride=2)
-
-        # # 128 channel blocks:
-        # h = self.block2_1(h)
-        # h = F.dropout(h, ratio=0.3)
-        # h = self.block2_2(h)
-        # h = F.max_pooling_2d(h, ksize=2, stride=2)
+        h = self.block1(x)
+        #h = F.dropout(h, ratio=0.2)
+        # h = self.block2(h)
+        # h = self.block3(h)
         #
-        # # 256 channel blocks:
-        # h = self.block3_1(h)
-        # h = F.dropout(h, ratio=0.3)
-        # h = self.block3_2(h)
-        # h = F.max_pooling_2d(h, ksize=2, stride=2)
-        #
-        # # 512 channel blocks:
-        # h = self.block4_1(h)
-        # h = F.dropout(h, ratio=0.3)
-        # h = self.block4_2(h)
-        # h = F.max_pooling_2d(h, ksize=2, stride=2)
-
-        h = F.dropout(h, ratio=0.2)
-        h = self.fc1(h)
-        h = F.relu(h)
-        h = F.dropout(h, ratio=0.2)
-        h = self.fc2(h)
-        h = F.relu(h)
-        h = F.dropout(h, ratio=0.2)  # dropout 多すぎる？
-        return self.fc3(h)
+        # h = self.fc1(h)
+        # h = F.relu(h)
+        # h = self.fc2(h)
+        # h = F.relu(h)
+        return F.tanh(self.fc3(h))
 
 
 class Transform(object):
@@ -192,7 +168,7 @@ def main():
     stop_trigger = (args.epoch, 'epoch')
     # Early stopping option
     if args.early_stopping:
-        stop_trigger = chainer.training.triggers.EarlyStoppingTrigger(
+        stop_trigger = training.triggers.EarlyStoppingTrigger(
             monitor=args.early_stopping, verbose=True,
             max_trigger=(args.epoch, 'epoch'))
 
@@ -245,4 +221,8 @@ def main():
 
 
 if __name__ == '__main__':
+    # for rendering graph on remote server.
+    # see: https://qiita.com/TomokIshii/items/3a26ee4453f535a69e9e
+    if platform.system() != "Darwin":
+        mpl.use('Agg')
     main()
