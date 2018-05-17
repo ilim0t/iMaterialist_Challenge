@@ -26,8 +26,6 @@ import matplotlib as mpl
 import platform
 
 
-
-
 class Block(chainer.Chain):
     """
     畳み込み層
@@ -60,11 +58,10 @@ class Mymodel(chainer.Chain):
 
     def loss_func(self, x, t):
         y = self.predict(x)
-
-        loss = F.bernoulli_nll(t.astype("f"), y) / len(y)
-
         t_card = F.sum(t.astype("f"), axis=1)
-        #loss = F.sum(? / t_card / (t.shape[1] - t_card))
+
+        # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
+        loss = F.sum(F.sum((t * F.exp(- y) + (1 - t) * F.exp(y)), axis=1) / (t_card * (t.shape[1] - t_card)))
 
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y.data, t)
