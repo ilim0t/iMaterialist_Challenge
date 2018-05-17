@@ -84,13 +84,13 @@ class Mymodel(chainer.Chain):
         # 64 channel blocks:
         h = self.block1(x)
         #h = F.dropout(h, ratio=0.2)
-        # h = self.block2(h)
-        # h = self.block3(h)
-        #
-        # h = self.fc1(h)
-        # h = F.relu(h)
-        # h = self.fc2(h)
-        # h = F.relu(h)
+        h = self.block2(h)
+        h = self.block3(h)
+
+        h = self.fc1(h)
+        h = F.relu(h)
+        h = self.fc2(h)
+        h = F.relu(h)
         return F.tanh(self.fc3(h))
 
 
