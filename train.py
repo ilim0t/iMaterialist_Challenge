@@ -98,14 +98,20 @@ class Mymodel(chainer.Chain):
 
 
 class Transform(object):
-    def __init__(self, args, json_data):
+    def __init__(self, args):
         self.label_variety = args.label_variety
         self.size = args.size
-        self.json_data = json_data
+        with open('input/train.json', 'r') as f:
+            self.json_data = [[int(j) for j in i["labelId"]] for i in json.load(f)["annotations"][:args.total_photo_num]]
         self.data_folder = 'data/' + args.object + '_images/'
+        self.file_nums = os.listdir(self.data_folder)
+        self.file_nums.remove('.gitkeep')
+        self.file_nums.remove('trash')
+        self.file_nums = [int(i.split('.')[0]) for i in self.file_nums]
+        self.file_nums.sort()
 
     def __call__(self, num):
-        img_data = Image.open(self.data_folder + str(num + 1) + '.jpg')
+        img_data = Image.open(self.data_folder + self.file_nums[num] + '.jpg')
         img_data = img_data.resize([self.size] * 2, Image.ANTIALIAS)  # 画像を一定サイズに揃える
         array_img = np.asarray(img_data).transpose(2, 0, 1).astype(np.float32) / 255.  # データを整えて各値を0~1の間に収める
 
@@ -154,10 +160,7 @@ def main():
     optimizer = chainer.optimizers.Adam()
     optimizer.setup(model)
 
-    with open('input/train.json', 'r') as f:
-        json_data = [[int(j) for j in i["labelId"]] for i in json.load(f)["annotations"][:args.total_photo_num]]
-
-    dataset = TransformDataset(range(args.total_photo_num), Transform(args, json_data))
+    dataset = TransformDataset(range(args.total_photo_num), Transform(args))
     train, test = chainer.datasets.split_dataset_random(dataset, int(args.total_photo_num * 0.8), seed=0)
     # 2割をvalidation用にとっておく
 
