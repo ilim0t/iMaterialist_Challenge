@@ -46,9 +46,9 @@ class Mymodel(chainer.Chain):
     def __init__(self, n_out):
         super(Mymodel, self).__init__()
         with self.init_scope():
-            self.block1 = Block(16, 2)  # n_in = args.size (300)^2 * 3 = 270000
-            self.block2 = Block(32, 2)
-            self.block3 = Block(64, 2)
+            self.block1 = Block(32, 3)  # n_in = args.size (300)^2 * 3 = 270000
+            self.block2 = Block(64, 2)
+            self.block3 = Block(128, 2)
 
             self.fc1 = L.Linear(512)
             self.fc2 = L.Linear(512)
@@ -61,7 +61,8 @@ class Mymodel(chainer.Chain):
         t_card = F.sum(t.astype("f"), axis=1)
 
         # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
-        loss = F.sum(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) / (t_card * (t.shape[1] - t_card)))
+        loss = F.sum(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) /
+                     (t_card * (t.shape[1] - t_card)))
 
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y.data, t)
@@ -78,7 +79,7 @@ class Mymodel(chainer.Chain):
         accuracy = sum([1 if all(i) else 0 for i in (y_binary == t)]) / len(y)  # dataひとつひとつのlabelが完全一致している確率
         frequent_error = np.sum((y_binary != t).astype(int), 0).argsort()[-1] + 1  # batchの中で最も多く間違って判断したlabel
         acc_66 = np.sum((y_binary[:, 65] == t[:, 65]).astype(int)) / len(y)  # 66番ラベルの正解率
-        return accuracy, frequent_error , acc_66
+        return accuracy, frequent_error, acc_66
 
     def predict(self, x):
         # 64 channel blocks:
@@ -88,8 +89,6 @@ class Mymodel(chainer.Chain):
         h = F.max_pooling_2d(h, 2)
         #h = F.dropout(h, ratio=0.2)
         h = self.block3(h)
-        h = F.max_pooling_2d(h, 2)
-
 
         h = self.fc1(h)
         h = F.relu(h)
@@ -121,7 +120,7 @@ class Transform(object):
 
 def main():
     parser = argparse.ArgumentParser(description='Linear iMaterialist_Challenge:')
-    parser.add_argument('--batchsize', '-b', type=int, default=128,
+    parser.add_argument('--batchsize', '-b', type=int, default=256,
                         help='Number of images in each mini-batch')
     parser.add_argument('--epoch', '-e', type=int, default=10,
                         help='Number of sweeps over the dataset to train')
@@ -199,7 +198,7 @@ def main():
                 'epoch', trigger=(1, 'epoch'), file_name='accuracy.png'))
         trainer.extend(
             extensions.PlotReport(
-                ['main/frequent_error', 'validation/main/frequent_error'],
+                ['main/freq_err', 'validation/main/freq_err'],
                 'epoch', trigger=(1, 'epoch'), file_name='frequent_error.png'))
 
     trainer.extend(extensions.PrintReport(
