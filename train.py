@@ -61,7 +61,7 @@ class Mymodel(chainer.Chain):
         t_card = F.sum(t.astype("f"), axis=1)
 
         # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
-        loss = F.sum(F.sum((t * F.exp(- y) + (1 - t) * F.exp(y)), axis=1) / (t_card * (t.shape[1] - t_card)))
+        loss = F.sum(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) / (t_card * (t.shape[1] - t_card)))
 
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y.data, t)
@@ -83,9 +83,13 @@ class Mymodel(chainer.Chain):
     def predict(self, x):
         # 64 channel blocks:
         h = self.block1(x)
-        #h = F.dropout(h, ratio=0.2)
+        h = F.max_pooling_2d(h, 2)
         h = self.block2(h)
+        h = F.max_pooling_2d(h, 2)
+        #h = F.dropout(h, ratio=0.2)
         h = self.block3(h)
+        h = F.max_pooling_2d(h, 2)
+
 
         h = self.fc1(h)
         h = F.relu(h)
@@ -137,7 +141,7 @@ def main():
                         help='Disable PlotReport extension'),
     parser.add_argument('--size', type=int, default=128),  # 正規化する時の一辺のpx
     parser.add_argument('--label_variety', type=int, default=228),  # 確認できたlabelの総数 この中で判断する
-    parser.add_argument('--total_photo_num', type=int, default=40000),  # 使用する写真データの数
+    parser.add_argument('--total_photo_num', type=int, default=10000),  # 使用する写真データの数
     parser.add_argument('--object', type=str, default='train')  # train or test のどちらか選んだ方のデータを使用する
     args = parser.parse_args()
 
