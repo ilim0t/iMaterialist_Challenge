@@ -120,19 +120,23 @@ class Mymodel(chainer.Chain):
             fig = plt.figure() #画像を出さないように
             ax = fig.add_subplot(1, 1, 1)
             ax.plot(range(1, self.n + 1), j)
-            for o in [3, 10]:
+            for o in [3, 10]:  # 平均移動線
                 if self.n >= o:
                     average_line = [0] * (self.n - o + 1)
                     for k, l in enumerate(j):
                         for m in range(o):
-                            if k - m >= 0 and k - m < len(average_line):
+                            if 0 >= k - m < len(average_line):
                                 average_line[k - m] += l
                     ax.plot(range(o, self.n + 1), list(map(lambda y: y/o, average_line)))
 
+            if i == 0:
+                ax.set_ylim(None, 0.7)
+            elif i == 2:
+                ax.set_ylim(0.7, None)
             ax.set_xticks(range(1, self.n + 1))
             ax.set_xlabel('iter')
             # ax.set_yticks([i / 10 for i in range(1, 10)])
-            ax.set_ylabel('loss')
+            ax.set_ylabel(name)
 
             #ax.legend(loc='best')
             #ax.set_title(name)
@@ -141,6 +145,7 @@ class Mymodel(chainer.Chain):
             if not os.path.isdir('progress'):
                 os.mkdir('progress')
             plt.savefig('progress/'+ name + '.png')
+            plt.clf()
 
 
 class Transform(object):
