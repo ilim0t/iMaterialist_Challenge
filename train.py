@@ -61,7 +61,7 @@ class Mymodel(chainer.Chain):
         t_card = F.sum(t.astype("f"), axis=1)
 
         # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
-        loss = F.sum(F.sum((t * F.exp(- y) + (1 - t) * F.exp(y)), axis=1) / (t_card * (t.shape[1] - t_card)))
+        loss = F.sum(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) / (t_card * (t.shape[1] - t_card)))
 
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y.data, t)
