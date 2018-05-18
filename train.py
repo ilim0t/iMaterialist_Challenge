@@ -127,7 +127,7 @@ class Mymodel(chainer.Chain):
                         for m in range(o):
                             if k - m >= 0 and k - m < len(average_line):
                                 average_line[k - m] += l
-                    ax.plot(range(3, self.n + 1), list(map(lambda y: y/3, average_line)))
+                    ax.plot(range(o, self.n + 1), list(map(lambda y: y/o, average_line)))
 
             ax.set_xticks(range(1, self.n + 1))
             ax.set_xlabel('iter')
