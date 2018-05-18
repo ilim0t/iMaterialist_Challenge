@@ -110,17 +110,17 @@ class Mymodel(chainer.Chain):
 
     def plot_acc(self, accuracy):
         for i in range(len(accuracy)):
-            self.accs[i].append(accuracy[:2] + accuracy[-1])
-        self.plot(self.accs[::])
+            self.accs[i].append(accuracy[i])
+        self.plot(self.accs[:2] + [self.accs[3]])
         self.n += 1
 
     def plot(self, x):
         for i, j in enumerate(x):
-            name = ['loss', 'accuracy', 'frequent_error', 'acc_66'][i]
+            name = ['loss', 'accuracy', 'acc_66'][i]
             fig = plt.figure() #画像を出さないように
             ax = fig.add_subplot(1, 1, 1)
             ax.plot(range(1, self.n + 1), j)
-            for o in [3,10]:
+            for o in [3, 10]:
                 if self.n >= o:
                     average_line = [0] * (self.n - o + 1)
                     for k, l in enumerate(j):
@@ -138,6 +138,8 @@ class Mymodel(chainer.Chain):
             #ax.set_title(name)
 
             # save as png
+            if not os.path.isdir('progress'):
+                os.mkdir('progress')
             plt.savefig('progress/'+ name + '.png')
 
 
