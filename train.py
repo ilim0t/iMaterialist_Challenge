@@ -23,6 +23,7 @@ import json
 from PIL import Image
 
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 import platform
 
 
@@ -44,6 +45,8 @@ class Block(chainer.Chain):
 
 class Mymodel(chainer.Chain):
     def __init__(self, n_out):
+        self.n = 1
+        self.accs = [[],[],[],[]]
         super(Mymodel, self).__init__()
         with self.init_scope():
             self.block1 = Block(32, 3)  # n_in = args.size (300)^2 * 3 = 270000
@@ -64,7 +67,7 @@ class Mymodel(chainer.Chain):
         t_card = F.sum(t.astype("f"), axis=1)
 
         # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
-        loss = F.sum(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) /
+        loss = F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) /
                      (t_card * (t.shape[1] - t_card)))
 
         chainer.reporter.report({'loss': loss}, self)
@@ -72,6 +75,7 @@ class Mymodel(chainer.Chain):
         chainer.reporter.report({'accuracy': accuracy[0]}, self)  # dataひとつひとつのlabelが完全一致している確率
         chainer.reporter.report({'freq_err': accuracy[1]}, self)  # batchの中で最も多く間違って判断したlabel
         chainer.reporter.report({'acc_66': accuracy[2]}, self)  # 66番ラベルの正解率
+        self.plot_acc([loss.data] + list(accuracy))
         return loss
 
     def accuracy(self, y, t):
@@ -90,7 +94,6 @@ class Mymodel(chainer.Chain):
         h = F.max_pooling_2d(h, 2)
         h = self.block2(h)
         h = F.max_pooling_2d(h, 2)
-        #h = F.dropout(h, ratio=0.2)
         h = self.block3(h)
         h = F.max_pooling_2d(h, 2)
         h = self.block4(h)
@@ -104,6 +107,38 @@ class Mymodel(chainer.Chain):
         h = self.fc2(h)
         h = F.relu(h)
         return F.tanh(self.fc3(h))
+
+    def plot_acc(self, accuracy):
+        for i in range(len(accuracy)):
+            self.accs[i].append(accuracy[:2] + accuracy[-1])
+        self.plot(self.accs[::])
+        self.n += 1
+
+    def plot(self, x):
+        for i, j in enumerate(x):
+            name = ['loss', 'accuracy', 'frequent_error', 'acc_66'][i]
+            fig = plt.figure() #画像を出さないように
+            ax = fig.add_subplot(1, 1, 1)
+            ax.plot(range(1, self.n + 1), j)
+            for o in [3,10]:
+                if self.n >= o:
+                    average_line = [0] * (self.n - o + 1)
+                    for k, l in enumerate(j):
+                        for m in range(o):
+                            if k - m >= 0 and k - m < len(average_line):
+                                average_line[k - m] += l
+                    ax.plot(range(3, self.n + 1), list(map(lambda y: y/3, average_line)))
+
+            ax.set_xticks(range(1, self.n + 1))
+            ax.set_xlabel('iter')
+            # ax.set_yticks([i / 10 for i in range(1, 10)])
+            ax.set_ylabel('loss')
+
+            #ax.legend(loc='best')
+            #ax.set_title(name)
+
+            # save as png
+            plt.savefig('progress/'+ name + '.png')
 
 
 class Transform(object):
