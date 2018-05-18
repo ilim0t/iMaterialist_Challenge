@@ -49,6 +49,9 @@ class Mymodel(chainer.Chain):
             self.block1 = Block(32, 3)  # n_in = args.size (300)^2 * 3 = 270000
             self.block2 = Block(64, 2)
             self.block3 = Block(128, 2)
+            self.block4 = Block(256, 2)
+            self.block5 = Block(256, 2)
+            self.block6 = Block(128, 2)
 
             self.fc1 = L.Linear(512)
             self.fc2 = L.Linear(512)
@@ -89,6 +92,12 @@ class Mymodel(chainer.Chain):
         h = F.max_pooling_2d(h, 2)
         #h = F.dropout(h, ratio=0.2)
         h = self.block3(h)
+        h = F.max_pooling_2d(h, 2)
+        h = self.block4(h)
+        h = F.max_pooling_2d(h, 2)
+        h = self.block5(h)
+        h = F.max_pooling_2d(h, 2)
+        h = self.block6(h)
 
         h = self.fc1(h)
         h = F.relu(h)
@@ -106,22 +115,23 @@ class Transform(object):
         self.data_folder = 'data/' + args.object + '_images/'
         self.file_nums = os.listdir(self.data_folder)
         self.file_nums.remove('.gitkeep')
+        self.file_nums.remove('.DS_Store')
         self.file_nums.remove('trash')
         self.file_nums = [int(i.split('.')[0]) for i in self.file_nums]
         self.file_nums.sort()
 
     def __call__(self, num):
-        img_data = Image.open(self.data_folder + self.file_nums[num] + '.jpg')
+        img_data = Image.open(self.data_folder + str(self.file_nums[num]) + '.jpg')
         img_data = img_data.resize([self.size] * 2, Image.ANTIALIAS)  # 画像を一定サイズに揃える
         array_img = np.asarray(img_data).transpose(2, 0, 1).astype(np.float32) / 255.  # データを整えて各値を0~1の間に収める
 
-        label = np.array([1 if i in self.json_data[num] else 0 for i in range(1, self.label_variety + 1)])
+        one_hot_label = np.array([1 if i in self.json_data[num] else 0 for i in range(1, self.label_variety + 1)])
         # すべてのlabel番号に対しlebelがついているならば1,そうでないならば0を入れたリスト
         #
         # 例: 1, 2, 10 のラベルがついている場合
         # [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, ...]
 
-        return array_img, label
+        return array_img, one_hot_label
 
 
 def main():
@@ -140,13 +150,11 @@ def main():
                         help='Frequency of taking a snapshot')
     parser.add_argument('--gpu', '-g', type=int, default=-1,
                         help='GPU ID (negative value indicates CPU)')
-    parser.add_argument('--unit', '-u', type=int, default=256,
-                        help='Number of units')
     parser.add_argument('--noplot', dest='plot', action='store_false',
                         help='Disable PlotReport extension'),
     parser.add_argument('--size', type=int, default=128),  # 正規化する時の一辺のpx
     parser.add_argument('--label_variety', type=int, default=228),  # 確認できたlabelの総数 この中で判断する
-    parser.add_argument('--total_photo_num', type=int, default=10000),  # 使用する写真データの数
+    parser.add_argument('--total_photo_num', type=int, default=9815),  # 使用する写真データの数
     parser.add_argument('--object', type=str, default='train')  # train or test のどちらか選んだ方のデータを使用する
     args = parser.parse_args()
 
