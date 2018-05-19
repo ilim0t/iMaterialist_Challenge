@@ -104,7 +104,7 @@ class Block(chainer.Chain):
 class Mymodel(chainer.Chain):
     def __init__(self, n_out):
         self.n = 1
-        self.accs = [[], [], [], []]
+        self.accs = [[], [], [], [], []]
         super(Mymodel, self).__init__()
         with self.init_scope():
             self.block1 = Block(32, 5, pad=1)  # n_in = args.size (300)^2 * 3 = 270000
@@ -169,7 +169,7 @@ class Mymodel(chainer.Chain):
         return F.tanh(self.fc3(h))
 
     def plot_acc(self, accuracy):
-        for i in range(len(self.accs) + 1):
+        for i in range(len(self.accs)):
             self.accs[i].append(accuracy[i])
         self.plot(self.accs[:2] + self.accs[3:])
         self.n += 1
