@@ -169,7 +169,7 @@ class Mymodel(chainer.Chain):
         return F.tanh(self.fc3(h))
 
     def plot_acc(self, accuracy):
-        for i in range(len(self.accs)):
+        for i in range(len(self.accs) + 1):
             self.accs[i].append(accuracy[i])
         self.plot(self.accs[:2] + self.accs[3:])
         self.n += 1
@@ -329,7 +329,7 @@ def main():
                 'epoch', trigger=(1, 'epoch'), file_name='frequent_error.png'))
         extensions.PlotReport(
             ['main/acc', 'val/acc2'],
-            'epoch', trigger=(1, 'epoch'), file_name='accuracy.png')
+            'epoch', trigger=(1, 'epoch'), file_name='accuracy2.png')
 
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'main/loss', 'val/loss',
