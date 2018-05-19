@@ -155,8 +155,6 @@ class Mymodel(chainer.Chain):
         h = self.block3(h)
         h = F.max_pooling_2d(h, 2)
         h = self.block4(h)
-        # h = F.max_pooling_2d(h, 2)
-        # h = self.block5(h)
 
         h = F.dropout(h, ratio=0.3)
         h = self.fc1(h)
@@ -203,7 +201,7 @@ class Mymodel(chainer.Chain):
             if not os.path.isdir('progress'):
                 os.mkdir('progress')
             mpl.pyplot.savefig('progress/' + name + '.png')
-            mpl.pyplott.clf()
+            mpl.pyplot.clf()
 
 
 class Transform(object):
