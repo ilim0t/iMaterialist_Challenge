@@ -43,10 +43,10 @@ from chainer.dataset import convert
 from chainer import function
 from chainer import reporter as reporter_module
 
-class My_Evaluator(extensions.Evaluator):
+class MyEvaluator(extensions.Evaluator):
     def __init__(self, iterator, target, converter=convert.concat_examples,
                  device=None, eval_hook=None, eval_func=None):
-        super(My_Evaluator, self).__init__(iterator, target, converter, device, eval_hook, eval_func)
+        super(MyEvaluator, self).__init__(iterator, target, converter, device, eval_hook, eval_func)
 
     def evaluate(self):
         iterator = self._iterators['main']
@@ -82,7 +82,7 @@ class My_Evaluator(extensions.Evaluator):
 
         d = {name: summary.compute_mean() for name, summary in six.iteritems(summary._summaries)}
         d['validation/main/freq_err'] = max([(v, k) for k, v in freq_errs.items()])[1]
-        return d
+        return {'val/' + name.split('/')[-1]: sammary for name, sammary in d.items()}
 
 
 class Block(chainer.Chain):
@@ -110,7 +110,8 @@ class Mymodel(chainer.Chain):
             self.block1 = Block(32, 5, pad=1)  # n_in = args.size (300)^2 * 3 = 270000
             self.block2 = Block(64, 3, pad=1)
             self.block3 = Block(128, 3, pad=1)
-            self.block4 = Block(256, 3)
+            self.block4 = Block(256, 3, pad=1)
+            self.block5 = Block(128, 3, pad=1)
 
             self.fc1 = L.Linear(512)
             self.fc2 = L.Linear(512)
@@ -155,28 +156,31 @@ class Mymodel(chainer.Chain):
         h = self.block3(h)
         h = F.max_pooling_2d(h, 2)
         h = self.block4(h)
+        h = F.max_pooling_2d(h, 2)
+        h = self.block5(h)
 
-        h = F.dropout(h, ratio=0.3)
+        h = F.dropout(h, ratio=0.2)
         h = self.fc1(h)
         h = F.dropout(h, ratio=0.2)
         h = F.relu(h)
         h = self.fc2(h)
+        h = F.dropout(h, ratio=0.2)
         h = F.relu(h)
         return F.tanh(self.fc3(h))
 
     def plot_acc(self, accuracy):
         for i in range(len(self.accs)):
             self.accs[i].append(accuracy[i])
-        self.plot(self.accs[:2] + [self.accs[3]])
+        self.plot(self.accs[:2] + self.accs[3:])
         self.n += 1
 
     def plot(self, x):
         for i, j in enumerate(x):
-            name = ['loss', 'accuracy', 'acc_66'][i]
+            name = ['loss', 'accuracy', 'acc_66', 'accuracy2'][i]
             fig = mpl.pyplot.figure()
             ax = fig.add_subplot(1, 1, 1)
             ax.plot(range(1, self.n + 1), j)
-            for o in [3, 10]:  # 平均移動線
+            for o in [5, 20]:  # 平均移動線
                 if self.n >= o:
                     average_line = [0] * (self.n - o + 1)
                     for k, l in enumerate(j):
@@ -266,7 +270,7 @@ def main():
                         help='Disable PlotReport extension'),
     parser.add_argument('--size', type=int, default=128),  # 正規化する時の一辺のpx
     parser.add_argument('--label_variety', type=int, default=228),  # 確認できたlabelの総数 この中で判断する
-    parser.add_argument('--total_photo_num', type=int, default=9815),  # 使用する写真データの数
+    parser.add_argument('--total_photo_num', type=int, default=9815),  # 使用する写真データの数(9815, 39269)
     parser.add_argument('--object', type=str, default='train')  # train or test のどちらか選んだ方のデータを使用する
     args = parser.parse_args()
 
@@ -299,7 +303,7 @@ def main():
         train_iter, optimizer, device=args.gpu, loss_func=model.loss_func)
     trainer = training.Trainer(updater, stop_trigger, out=args.out)
 
-    evaluator = My_Evaluator(test_iter, model, device=args.gpu, eval_func=model.loss_func)
+    evaluator = MyEvaluator(test_iter, model, device=args.gpu, eval_func=model.loss_func)
     evaluator.trigger = 1, 'epoch'
     trainer.extend(evaluator)
 
@@ -313,25 +317,25 @@ def main():
     if args.plot and extensions.PlotReport.available():
         trainer.extend(
             extensions.PlotReport(
-                ['main/loss', 'validation/main/loss'],
+                ['main/loss', 'val/loss'],
                 'epoch', trigger=(1, 'epoch'), file_name='loss.png'))
         trainer.extend(
             extensions.PlotReport(
-                ['main/acc', 'validation/main/acc'],
+                ['main/acc', 'val/acc'],
                 'epoch', trigger=(1, 'epoch'), file_name='accuracy.png'))
         trainer.extend(
             extensions.PlotReport(
                 ['main/freq_err', 'validation/main/freq_err'],
                 'epoch', trigger=(1, 'epoch'), file_name='frequent_error.png'))
         extensions.PlotReport(
-            ['main/acc', 'validation/main/acc2'],
+            ['main/acc', 'val/acc2'],
             'epoch', trigger=(1, 'epoch'), file_name='accuracy.png')
 
     trainer.extend(extensions.PrintReport(
-        ['epoch', 'iteration', 'main/loss', 'validation/main/loss',
-         'main/acc', 'validation/main/acc',
-         'main/freq_err', 'validation/main/freq_err', 'main/acc_66',
-         'main/acc2', 'validation/main/acc2', 'elapsed_time'
+        ['epoch', 'iteration', 'main/loss', 'val/loss',
+         'main/acc', 'vali/acc',
+         'main/freq_err', 'val/freq_err', 'main/acc_66',
+         'main/acc2', 'val/acc2', 'elapsed_time'
          ]))
 
     trainer.extend(extensions.ProgressBar())
