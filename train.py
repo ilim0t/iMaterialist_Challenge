@@ -7,6 +7,8 @@ import warnings
 warnings.filterwarnings('ignore', category=FutureWarning, message="Conversion of the second")
 warnings.filterwarnings('ignore', category=RuntimeWarning, message="overflow encountered in exp")
 warnings.filterwarnings('ignore', category=RuntimeWarning, message="invalid value encountered in sqrt")
+warnings.filterwarnings('ignore', category=RuntimeWarning, message="More than 20 figures have been opened.")
+
 
 import chainer
 import chainer.functions as F
@@ -28,6 +30,51 @@ import platform
 
 from scipy.ndimage.interpolation import rotate
 from scipy.misc import imresize
+
+import chainer.training.extensions.evaluator
+
+
+import copy
+
+from chainer.dataset import convert
+from chainer import function
+from chainer import reporter as reporter_module
+
+class My_Evaluator(extensions.Evaluator):
+    def __init__(self, iterator, target, converter=convert.concat_examples,
+                 device=None, eval_hook=None, eval_func=None):
+        super(My_Evaluator, self).__init__(iterator, target, converter, device, eval_hook, eval_func)
+
+    def evaluate(self):
+        iterator = self._iterators['main']
+        eval_func = self.eval_func or self._targets['main']
+
+        if self.eval_hook:
+            self.eval_hook(self)
+
+        if hasattr(iterator, 'reset'):
+            iterator.reset()
+            it = iterator
+        else:
+            it = copy.copy(iterator)
+
+        summary = reporter_module.DictSummary()
+
+        for batch in it:
+            observation = {}
+            with reporter_module.report_scope(observation):
+                in_arrays = self.converter(batch, self.device)
+                with function.no_backprop_mode():
+                    if isinstance(in_arrays, tuple):
+                        eval_func(*in_arrays)
+                    elif isinstance(in_arrays, dict):
+                        eval_func(**in_arrays)
+                    else:
+                        eval_func(in_arrays)
+
+            summary.add(observation)
+
+        return {name: summary._x for name, summary in summary._summaries.items()}
 
 
 class Block(chainer.Chain):
@@ -172,6 +219,7 @@ class Transform(object):
         img_data = img_data.resize([self.size] * 2, Image.ANTIALIAS)  # 画像を一定サイズに揃える
         array_img = np.asarray(img_data).transpose(2, 0, 1).astype(np.float32) / 255.  # データを整えて各値を0~1の間に収める
         array_img = self.augment(array_img)
+        array_img = self.augment(img_data, array_img)
         one_hot_label = np.array([1 if i in self.json_data[num] else 0 for i in range(1, self.label_variety + 1)])
         # すべてのlabel番号に対しlebelがついているならば1,そうでないならば0を入れたリスト
         #
@@ -180,18 +228,17 @@ class Transform(object):
 
         return array_img, one_hot_label
 
-    def augment(self, img):
+    def augment(self, raw, img):
         if np.random.rand() < 0.5:
-            pass
-            #img = img[:, :-1, :]  # 左右対称
+            img = img[::-1, :, :]  # 左右対称
         if np.random.rand() < 0.2:
             angle = np.random.randint(-30, 30)
-            img = rotate(img, angle, axes=(1,2))
+            img = rotate(img, angle, axes=(1, 2))
+            #img = raw.rotate(angle)
+            #img = np.asarray(img2).transpose(2, 0, 1).astype(np.float32) / 255.
             img = imresize(img.transpose(1, 2, 0), [self.size] * 2).transpose((2, 0, 1))
 
-        plt.imshow(img.transpose(1, 2, 0))
-        #plt.show()
-        #plt.cla()
+        #plt.imshow(img.transpose(1, 2, 0))
         return img
 
 
@@ -248,7 +295,7 @@ def main():
         train_iter, optimizer, device=args.gpu, loss_func=model.loss_func)
     trainer = training.Trainer(updater, stop_trigger, out=args.out)
 
-    evaluator = extensions.Evaluator(test_iter, model, device=args.gpu, eval_func=model.loss_func)
+    evaluator = My_Evaluator(test_iter, model, device=args.gpu, eval_func=model.loss_func)
     evaluator.trigger = 1, 'epoch'
     trainer.extend(evaluator)
 
