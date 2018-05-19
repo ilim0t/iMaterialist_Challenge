@@ -25,8 +25,13 @@ import json
 from PIL import Image
 
 import matplotlib as mpl
-import matplotlib.pyplot as plt
 import platform
+
+# for rendering graph on remote server.
+# see: https://qiita.com/TomokIshii/items/3a26ee4453f535a69e9e
+if 1 or platform.system() != "Darwin":
+    mpl.use('Agg')
+import matplotlib.pyplot as plt
 
 from scipy.ndimage.interpolation import rotate
 from scipy.misc import imresize
@@ -35,7 +40,7 @@ import chainer.training.extensions.evaluator
 
 
 import copy
-
+import six
 from chainer.dataset import convert
 from chainer import function
 from chainer import reporter as reporter_module
@@ -59,6 +64,7 @@ class My_Evaluator(extensions.Evaluator):
             it = copy.copy(iterator)
 
         summary = reporter_module.DictSummary()
+        freq_errs = dict()
 
         for batch in it:
             observation = {}
@@ -73,8 +79,13 @@ class My_Evaluator(extensions.Evaluator):
                         eval_func(in_arrays)
 
             summary.add(observation)
+            freq_errs[observation['validation/main/freq_err']] = \
+                freq_errs.get(observation['validation/main/freq_err'], 0) + 1
 
-        return {name: summary._x for name, summary in summary._summaries.items()}
+        d = {name: summary.compute_mean() for name, summary in six.iteritems(summary._summaries)}
+        d['validation/main/freq_err'] = max([(v, k) for k, v in freq_errs.items()])[1]
+
+        return d
 
 
 class Block(chainer.Chain):
@@ -169,7 +180,7 @@ class Mymodel(chainer.Chain):
     def plot(self, x):
         for i, j in enumerate(x):
             name = ['loss', 'accuracy', 'acc_66'][i]
-            fig = plt.figure() #画像を出さないように
+            fig = mpl.pyplot.figure()
             ax = fig.add_subplot(1, 1, 1)
             ax.plot(range(1, self.n + 1), j)
             for o in [3, 10]:  # 平均移動線
@@ -196,8 +207,8 @@ class Mymodel(chainer.Chain):
             # save as png
             if not os.path.isdir('progress'):
                 os.mkdir('progress')
-            plt.savefig('progress/'+ name + '.png')
-            plt.clf()
+            mpl.pyplot.savefig('progress/'+ name + '.png')
+            mpl.pyplott.clf()
 
 
 class Transform(object):
@@ -237,7 +248,7 @@ class Transform(object):
             #img = np.asarray(img2).transpose(2, 0, 1).astype(np.float32) / 255.
             img = imresize(img.transpose(1, 2, 0), [self.size] * 2).transpose((2, 0, 1))
 
-        #plt.imshow(img.transpose(1, 2, 0))
+        #mpl.pyplot.imshow(img.transpose(1, 2, 0))
         return img
 
 
@@ -343,8 +354,4 @@ def main():
 
 
 if __name__ == '__main__':
-    # for rendering graph on remote server.
-    # see: https://qiita.com/TomokIshii/items/3a26ee4453f535a69e9e
-    if platform.system() != "Darwin":
-        mpl.use('Agg')
     main()
