@@ -218,7 +218,6 @@ class Transform(object):
         img_data = Image.open(self.data_folder + str(self.file_nums[num]) + '.jpg')
         img_data = img_data.resize([self.size] * 2, Image.ANTIALIAS)  # 画像を一定サイズに揃える
         array_img = np.asarray(img_data).transpose(2, 0, 1).astype(np.float32) / 255.  # データを整えて各値を0~1の間に収める
-        array_img = self.augment(array_img)
         array_img = self.augment(img_data, array_img)
         one_hot_label = np.array([1 if i in self.json_data[num] else 0 for i in range(1, self.label_variety + 1)])
         # すべてのlabel番号に対しlebelがついているならば1,そうでないならば0を入れたリスト
