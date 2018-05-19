@@ -26,6 +26,9 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import platform
 
+from scipy.ndimage.interpolation import rotate
+from scipy.misc import imresize
+
 
 class Block(chainer.Chain):
     """
@@ -72,9 +75,10 @@ class Mymodel(chainer.Chain):
 
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y.data, t)
-        chainer.reporter.report({'accuracy': accuracy[0]}, self)  # dataひとつひとつのlabelが完全一致している確率
+        chainer.reporter.report({'acc': accuracy[0]}, self)  # dataひとつひとつのlabelが完全一致している確率
         chainer.reporter.report({'freq_err': accuracy[1]}, self)  # batchの中で最も多く間違って判断したlabel
         chainer.reporter.report({'acc_66': accuracy[2]}, self)  # 66番ラベルの正解率
+        chainer.reporter.report({'acc2': accuracy[3]}, self)
         self.plot_acc([loss.data] + list(accuracy))
         return loss
 
@@ -86,7 +90,8 @@ class Mymodel(chainer.Chain):
         accuracy = sum([1 if all(i) else 0 for i in (y_binary == t)]) / len(y)  # dataひとつひとつのlabelが完全一致している確率
         frequent_error = np.sum((y_binary != t).astype(int), 0).argsort()[-1] + 1  # batchの中で最も多く間違って判断したlabel
         acc_66 = np.sum((y_binary[:, 65] == t[:, 65]).astype(int)) / len(y)  # 66番ラベルの正解率
-        return accuracy, frequent_error, acc_66
+        accuracy2 = np.sum((y_binary == t).astype(int)) / len(y) / len(y[0])  # すべてのbatchを通してlabelそれぞれの正解確率の平均
+        return accuracy, frequent_error, acc_66, accuracy2
 
     def predict(self, x):
         # 64 channel blocks:
@@ -109,7 +114,7 @@ class Mymodel(chainer.Chain):
         return F.tanh(self.fc3(h))
 
     def plot_acc(self, accuracy):
-        for i in range(len(accuracy)):
+        for i in range(len(self.accs)):
             self.accs[i].append(accuracy[i])
         self.plot(self.accs[:2] + [self.accs[3]])
         self.n += 1
@@ -166,7 +171,7 @@ class Transform(object):
         img_data = Image.open(self.data_folder + str(self.file_nums[num]) + '.jpg')
         img_data = img_data.resize([self.size] * 2, Image.ANTIALIAS)  # 画像を一定サイズに揃える
         array_img = np.asarray(img_data).transpose(2, 0, 1).astype(np.float32) / 255.  # データを整えて各値を0~1の間に収める
-
+        array_img = self.augment(array_img)
         one_hot_label = np.array([1 if i in self.json_data[num] else 0 for i in range(1, self.label_variety + 1)])
         # すべてのlabel番号に対しlebelがついているならば1,そうでないならば0を入れたリスト
         #
@@ -174,6 +179,20 @@ class Transform(object):
         # [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, ...]
 
         return array_img, one_hot_label
+
+    def augment(self, img):
+        if np.random.rand() < 0.5:
+            pass
+            #img = img[:, :-1, :]  # 左右対称
+        if np.random.rand() < 0.2:
+            angle = np.random.randint(-30, 30)
+            img = rotate(img, angle, axes=(1,2))
+            img = imresize(img.transpose(1, 2, 0), [self.size] * 2).transpose((2, 0, 1))
+
+        plt.imshow(img.transpose(1, 2, 0))
+        #plt.show()
+        #plt.cla()
+        return img
 
 
 def main():
@@ -247,17 +266,21 @@ def main():
                 'epoch', trigger=(1, 'epoch'), file_name='loss.png'))
         trainer.extend(
             extensions.PlotReport(
-                ['main/accuracy', 'validation/main/accuracy'],
+                ['main/acc', 'validation/main/acc'],
                 'epoch', trigger=(1, 'epoch'), file_name='accuracy.png'))
         trainer.extend(
             extensions.PlotReport(
                 ['main/freq_err', 'validation/main/freq_err'],
                 'epoch', trigger=(1, 'epoch'), file_name='frequent_error.png'))
+        extensions.PlotReport(
+            ['main/acc', 'validation/main/acc2'],
+            'epoch', trigger=(1, 'epoch'), file_name='accuracy.png')
 
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'main/loss', 'validation/main/loss',
-         'main/accuracy', 'validation/main/accuracy',
-         'main/freq_err', 'validation/main/freq_err', 'main/acc_66', 'elapsed_time'
+         'main/acc', 'validation/main/acc',
+         'main/freq_err', 'validation/main/freq_err', 'main/acc_66',
+         'main/acc2', 'validation/main/acc2', 'elapsed_time'
          ]))
 
     trainer.extend(extensions.ProgressBar())
