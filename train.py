@@ -110,12 +110,11 @@ class Mymodel(chainer.Chain):
         self.accs = [[],[],[],[]]
         super(Mymodel, self).__init__()
         with self.init_scope():
-            self.block1 = Block(32, 3)  # n_in = args.size (300)^2 * 3 = 270000
-            self.block2 = Block(64, 2)
-            self.block3 = Block(128, 2)
-            self.block4 = Block(256, 2)
-            self.block5 = Block(256, 2)
-            self.block6 = Block(128, 2)
+            self.block1 = Block(32, 5, pad=1)  # n_in = args.size (300)^2 * 3 = 270000
+            self.block2 = Block(64, 3, pad=1)
+            self.block3 = Block(128, 3, pad=1)
+            self.block4 = Block(256, 3)
+
 
             self.fc1 = L.Linear(512)
             self.fc2 = L.Linear(512)
@@ -160,12 +159,12 @@ class Mymodel(chainer.Chain):
         h = self.block3(h)
         h = F.max_pooling_2d(h, 2)
         h = self.block4(h)
-        h = F.max_pooling_2d(h, 2)
-        h = self.block5(h)
-        h = F.max_pooling_2d(h, 2)
-        h = self.block6(h)
+        # h = F.max_pooling_2d(h, 2)
+        # h = self.block5(h)
 
+        h = F.dropout(h, ratio=0.3)
         h = self.fc1(h)
+        h = F.dropout(h, ratio=0.2)
         h = F.relu(h)
         h = self.fc2(h)
         h = F.relu(h)
@@ -355,3 +354,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    
