@@ -9,7 +9,6 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, message="overflow enc
 warnings.filterwarnings('ignore', category=RuntimeWarning, message="invalid value encountered in sqrt")
 warnings.filterwarnings('ignore', category=RuntimeWarning, message="More than 20 figures have been opened.")
 
-
 import chainer
 import chainer.functions as F
 import chainer.links as L
@@ -37,7 +36,6 @@ from scipy.ndimage.interpolation import rotate
 from scipy.misc import imresize
 
 import chainer.training.extensions.evaluator
-
 
 import copy
 import six
@@ -84,7 +82,6 @@ class My_Evaluator(extensions.Evaluator):
 
         d = {name: summary.compute_mean() for name, summary in six.iteritems(summary._summaries)}
         d['validation/main/freq_err'] = max([(v, k) for k, v in freq_errs.items()])[1]
-
         return d
 
 
@@ -107,7 +104,7 @@ class Block(chainer.Chain):
 class Mymodel(chainer.Chain):
     def __init__(self, n_out):
         self.n = 1
-        self.accs = [[],[],[],[]]
+        self.accs = [[], [], [], []]
         super(Mymodel, self).__init__()
         with self.init_scope():
             self.block1 = Block(32, 5, pad=1)  # n_in = args.size (300)^2 * 3 = 270000
@@ -115,11 +112,10 @@ class Mymodel(chainer.Chain):
             self.block3 = Block(128, 3, pad=1)
             self.block4 = Block(256, 3)
 
-
             self.fc1 = L.Linear(512)
             self.fc2 = L.Linear(512)
-            #↓中身を調べている最中
-            #self.bn_fc1 = L.BatchNormalization(512)
+            # ↓中身を調べている最中
+            # self.bn_fc1 = L.BatchNormalization(512)
             self.fc3 = L.Linear(n_out)
 
     def loss_func(self, x, t):
@@ -128,7 +124,7 @@ class Mymodel(chainer.Chain):
 
         # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
         loss = F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) /
-                     (t_card * (t.shape[1] - t_card)))
+                         (t_card * (t.shape[1] - t_card)))
 
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y.data, t)
@@ -189,7 +185,7 @@ class Mymodel(chainer.Chain):
                         for m in range(o):
                             if k - m >= 0 and k - m < len(average_line):
                                 average_line[k - m] += l
-                    ax.plot(range(o, self.n + 1), list(map(lambda y: y/o, average_line)))
+                    ax.plot(range(o, self.n + 1), list(map(lambda y: y / o, average_line)))
 
             if i == 0:
                 ax.set_ylim(None, 0.7)
@@ -200,13 +196,13 @@ class Mymodel(chainer.Chain):
             # ax.set_yticks([i / 10 for i in range(1, 10)])
             ax.set_ylabel(name)
 
-            #ax.legend(loc='best')
-            #ax.set_title(name)
+            # ax.legend(loc='best')
+            # ax.set_title(name)
 
             # save as png
             if not os.path.isdir('progress'):
                 os.mkdir('progress')
-            mpl.pyplot.savefig('progress/'+ name + '.png')
+            mpl.pyplot.savefig('progress/' + name + '.png')
             mpl.pyplott.clf()
 
 
@@ -215,7 +211,8 @@ class Transform(object):
         self.label_variety = args.label_variety
         self.size = args.size
         with open('input/train.json', 'r') as f:
-            self.json_data = [[int(j) for j in i["labelId"]] for i in json.load(f)["annotations"][:args.total_photo_num]]
+            self.json_data = [[int(j) for j in i["labelId"]] for i in
+                              json.load(f)["annotations"][:args.total_photo_num]]
         self.data_folder = 'data/' + args.object + '_images/'
         self.file_nums = os.listdir(self.data_folder)
         self.file_nums.remove('.gitkeep')
@@ -243,11 +240,11 @@ class Transform(object):
         if np.random.rand() < 0.2:
             angle = np.random.randint(-30, 30)
             img = rotate(img, angle, axes=(1, 2))
-            #img = raw.rotate(angle)
-            #img = np.asarray(img2).transpose(2, 0, 1).astype(np.float32) / 255.
+            # img = raw.rotate(angle)
+            # img = np.asarray(img2).transpose(2, 0, 1).astype(np.float32) / 255.
             img = imresize(img.transpose(1, 2, 0), [self.size] * 2).transpose((2, 0, 1))
 
-        #mpl.pyplot.imshow(img.transpose(1, 2, 0))
+        # mpl.pyplot.imshow(img.transpose(1, 2, 0))
         return img
 
 
@@ -343,8 +340,8 @@ def main():
 
     if os.path.isfile(args.resume) and args.resume:
         pass
-    #chainer.serializers.load_npz("result/snapshot_iter_63", trainer)
-        #chainer.serializers.load_npz("result/snapshot_iter_0", model, path='updater/model:main/')
+    # chainer.serializers.load_npz("result/snapshot_iter_63", trainer)
+    # chainer.serializers.load_npz("result/snapshot_iter_0", model, path='updater/model:main/')
 
     # Run the training
     trainer.run()
@@ -354,4 +351,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
