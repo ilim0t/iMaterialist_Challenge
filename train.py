@@ -133,7 +133,8 @@ class Mymodel(chainer.Chain):
         chainer.reporter.report({'freq_err': accuracy[1]}, self)  # batchの中で最も多く間違って判断したlabel
         chainer.reporter.report({'acc_66': accuracy[2]}, self)  # 66番ラベルの正解率
         chainer.reporter.report({'acc2': accuracy[3]}, self)
-        self.plot_acc([loss.data] + list(accuracy))
+        if t.shape[0] == 256:
+            self.plot_acc([loss.data] + list(accuracy))
         return loss
 
     def accuracy(self, y, t):
@@ -193,7 +194,7 @@ class Mymodel(chainer.Chain):
                 ax.set_ylim(None, 0.7)
             elif i == 2:
                 ax.set_ylim(0.7, None)
-            ax.set_xticks(range(1, self.n + 1))
+            #ax.set_xticks(range(1, self.n + 1))
             ax.set_xlabel('iter')
             # ax.set_yticks([i / 10 for i in range(1, 10)])
             ax.set_ylabel(name)
