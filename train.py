@@ -104,7 +104,7 @@ class Block(chainer.Chain):
 class Mymodel(chainer.Chain):
     def __init__(self, n_out):
         self.n = 1
-        self.accs = [[], [], [], [], []]
+        self.accs = [[], [], [], [], [], []]
         super(Mymodel, self).__init__()
         with self.init_scope():
             self.block1 = Block(32, 5, pad=1)  # n_in = args.size (300)^2 * 3 = 270000
@@ -132,7 +132,8 @@ class Mymodel(chainer.Chain):
         chainer.reporter.report({'acc': accuracy[0]}, self)  # dataひとつひとつのlabelが完全一致している確率
         chainer.reporter.report({'freq_err': accuracy[1]}, self)  # batchの中で最も多く間違って判断したlabel
         chainer.reporter.report({'acc_66': accuracy[2]}, self)  # 66番ラベルの正解率
-        chainer.reporter.report({'acc2': accuracy[3]}, self)
+        chainer.reporter.report({'acc2': accuracy[3]}, self)  # すべてのbatchを通してlabelそれぞれの正解確率の平均
+        chainer.reporter.report({'f1': accuracy[4]}, self)
         if t.shape[0] == 256:
             self.plot_acc([loss.data] + list(accuracy))
         return loss
@@ -146,14 +147,18 @@ class Mymodel(chainer.Chain):
         frequent_error = np.sum((y_binary != t).astype(int), 0).argsort()[-1] + 1  # batchの中で最も多く間違って判断したlabel
         acc_66 = np.sum((y_binary[:, 65] == t[:, 65]).astype(int)) / len(y)  # 66番ラベルの正解率
         accuracy2 = np.sum((y_binary == t).astype(int)) / len(y) / len(y[0])  # すべてのbatchを通してlabelそれぞれの正解確率の平均
-        return accuracy, frequent_error, acc_66, accuracy2
+        TP = np.sum(y_binary * t, axis=1)
+        FP = np.sum(y_binary * (1 - t), axis=1)
+        FN = np.sum((1 - y_binary) * t, axis=1)
+        f1 = np.average(2 * TP / (2 * TP + FP + FN))
+        return accuracy, frequent_error, acc_66, accuracy2, f1
 
     def predict(self, x):
         # 64 channel blocks:
         h = self.block1(x)
-        h = F.max_pooling_2d(h, 2)
+        h = F.max_pooling_2d(h, 3)
         h = self.block2(h)
-        h = F.max_pooling_2d(h, 2)
+        h = F.max_pooling_2d(h, 3)
         h = self.block3(h)
         h = F.max_pooling_2d(h, 2)
         h = self.block4(h)
@@ -177,7 +182,7 @@ class Mymodel(chainer.Chain):
 
     def plot(self, x):
         for i, j in enumerate(x):
-            name = ['loss', 'accuracy', 'acc_66', 'accuracy2'][i]
+            name = ['loss', 'accuracy', 'acc_66', 'accuracy2', 'f1'][i]
             fig = mpl.pyplot.figure()
             ax = fig.add_subplot(1, 1, 1)
             ax.plot(range(1, self.n + 1), j)
@@ -319,24 +324,27 @@ def main():
         trainer.extend(
             extensions.PlotReport(
                 ['main/loss', 'val/loss'],
-                'epoch', trigger=(1, 'epoch'), file_name='loss.png'))
+                'epoch', trigger=(5, 'iteration'), file_name='loss.png'))
         trainer.extend(
             extensions.PlotReport(
                 ['main/acc', 'val/acc'],
-                'epoch', trigger=(1, 'epoch'), file_name='accuracy.png'))
+                'epoch', trigger=(5, 'iteration'), file_name='accuracy.png'))
         trainer.extend(
             extensions.PlotReport(
-                ['main/freq_err', 'validation/main/freq_err'],
-                'epoch', trigger=(1, 'epoch'), file_name='frequent_error.png'))
+                ['main/freq_err', 'val/freq_err'],
+                'epoch', trigger=(5, 'iteration'), file_name='frequent_error.png'))
         extensions.PlotReport(
-            ['main/acc', 'val/acc2'],
-            'epoch', trigger=(1, 'epoch'), file_name='accuracy2.png')
+                ['main/acc2', 'val/acc2'],
+                'epoch', trigger=(5, 'iteration'), file_name='accuracy2.png')
+        extensions.PlotReport(
+                ['main/f1', 'val/f1'],
+                'epoch', trigger=(5, 'iteration'), file_name='f1.png')
 
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'main/loss', 'val/loss',
          'main/acc', 'vali/acc',
          'main/freq_err', 'val/freq_err', 'main/acc_66',
-         'main/acc2', 'val/acc2', 'elapsed_time'
+         'main/acc2', 'val/acc2', 'main/f1', 'val/f1', 'elapsed_time'
          ]))
 
     trainer.extend(extensions.ProgressBar())
