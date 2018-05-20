@@ -222,7 +222,7 @@ class Mymodel(chainer.Chain):
                         for m in range(o):
                             if k - m >= 0 and k - m < len(average_line):
                                 average_line[k - m] += l
-                    ax.plot(range(o, self.n + 1), list(map(lambda y: y / o, average_line)))
+                    ax.plot(range(o, self.n + 1), [y / o for y in average_line])
 
             if i == 0:
                 ax.set_ylim(None, 1.6)
@@ -252,7 +252,7 @@ class Transform(object):
                               json.load(f)["annotations"][:args.total_photo_num]]
         self.data_folder = 'data/' + args.object + '_images/'
         self.file_nums = os.listdir(self.data_folder)
-        map(lambda x: self.file_nums.remove(x), ['.keep', '.DS_Store', 'trash'])
+        [self.file_nums.remove(i) for i in ['.gitkeep', '.DS_Store', 'trash']]
         self.file_nums = [int(i.split('.')[0]) for i in self.file_nums]
         self.file_nums.sort()
 
