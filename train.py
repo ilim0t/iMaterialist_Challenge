@@ -73,7 +73,7 @@ class MyEvaluator(extensions.Evaluator):
             observation = {}
             with reporter_module.report_scope(observation):
                 in_arrays = self.converter(batch, self.device)
-                with F.no_backprop_mode():
+                with chainer.function.no_backprop_mode():
                     if isinstance(in_arrays, tuple):
                         eval_func(*in_arrays)
                     elif isinstance(in_arrays, dict):
@@ -95,9 +95,10 @@ class Block(chainer.Chain):
     畳み込み層
     """
     def __init__(self, out_channels, ksize, stride=1, pad=0):
+        initializer = chainer.initializers.HeNormal()
         super(Block, self).__init__()
         with self.init_scope():
-            self.conv = L.Convolution2D(None, out_channels, ksize, stride, pad)
+            self.conv = L.Convolution2D(None, out_channels, ksize, stride, pad, initialW=initializer)
             self.bn = L.BatchNormalization(out_channels)
 
     def __call__(self, x):
@@ -111,6 +112,7 @@ class Mymodel(chainer.Chain):
         self.n = 1
         self.accs = [[], [], [], [], [], []]
         super(Mymodel, self).__init__()
+        initializer = chainer.initializers.HeNormal()
         with self.init_scope():
             self.block1 = Block(32, 5, pad=1)  # n_in = args.size (300)^2 * 3 = 270000
             self.block2 = Block(64, 3, pad=1)
@@ -118,8 +120,8 @@ class Mymodel(chainer.Chain):
             self.block4 = Block(256, 3, pad=1)
             self.block5 = Block(128, 3, pad=1)
 
-            self.fc1 = L.Linear(512)
-            self.fc2 = L.Linear(512)
+            self.fc1 = L.Linear(512, initialW=initializer)
+            self.fc2 = L.Linear(512, initialW=initializer)
             # ↓中身を調べている最中
             # self.bn_fc1 = L.BatchNormalization(512)
             self.fc3 = L.Linear(n_out)
@@ -167,14 +169,19 @@ class Mymodel(chainer.Chain):
     def predict(self, x):
         # 64 channel blocks:
         h = self.block1(x)
+        h = F.relu(h)
         h = F.max_pooling_2d(h, 3)
         h = self.block2(h)
+        h = F.relu(h)
         h = F.max_pooling_2d(h, 3)
         h = self.block3(h)
+        h = F.relu(h)
         h = F.max_pooling_2d(h, 2)
         h = self.block4(h)
+        h = F.relu(h)
         h = F.max_pooling_2d(h, 2)
         h = self.block5(h)
+        h = F.relu(h)
 
         h = self.fc1(h)
         h = F.dropout(h, ratio=0.2)
@@ -282,7 +289,7 @@ def main():
                         help='Disable PlotReport extension'),
     parser.add_argument('--size', type=int, default=128),  # 正規化する時の一辺のpx
     parser.add_argument('--label_variety', type=int, default=228),  # 確認できたlabelの総数 この中で判断する
-    parser.add_argument('--total_photo_num', type=int, default=9815),  # 使用する写真データの数(9815, 39269)
+    parser.add_argument('--total_photo_num', '-n', type=int, default=9815),  # 使用する写真データの数(9815, 39269)
     parser.add_argument('--object', type=str, default='train')  # train or test のどちらか選んだ方のデータを使用する
     args = parser.parse_args()
 
