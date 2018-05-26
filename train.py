@@ -87,11 +87,13 @@ class Transform(object):
         self.label_variety = args.label_variety
         self.size = args.size
         self.data_folder = 'data/' + args.object + '_images/'
+        self.isTrain = isTrain
 
-        with open('input/train.json', 'r') as f:  # 教師データの読み込み
-            self.json_data = [[int(j) for j in i["labelId"]] for i in
-                              json.load(f)["annotations"][:photo_nums[-1 if args.total_photo_num == -1
-                              else args.total_photo_num - 1]]]
+        if isTrain:
+            with open('input/train.json', 'r') as f:  # 教師データの読み込み
+                self.json_data = [[int(j) for j in i["labelId"]] for i in
+                                  json.load(f)["annotations"][:photo_nums[-1 if args.total_photo_num == -1
+                                  else args.total_photo_num - 1]]]
 
     def __call__(self, num):
         img_data = Image.open(self.data_folder + str(num) + '.jpg')
@@ -107,6 +109,8 @@ class Transform(object):
         array_img = self.zscore(array_img)
         array_img = array_img.transpose(2, 0, 1).astype(np.float32)
 
+        if not self.isTrain:
+            return array_img
         label = np.array([1 if i in self.json_data[num - 1] else 0 for i in range(1, self.label_variety + 1)])
         # すべてのlabel番号に対しlebelがついているならば1,そうでないならば0を入れたリスト
         # 例: 1, 2, 10 のラベルがついている場合
@@ -192,7 +196,7 @@ def main():
 
     # モデルの定義
     model = mymodel.ResNet(args.label_variety)
-    #model = models.model.Mymodel(args.label_variety)
+    #model = mymodel.Mymodel(args.label_variety)
 
     # GPUで動かせるのならば動かす
     if args.gpu >= 0:
@@ -205,14 +209,14 @@ def main():
 
     # データセットのセットアップ
     photo_nums = photos(args)
-    train, test = chainer.datasets.split_dataset_random(photo_nums,
+    train, val = chainer.datasets.split_dataset_random(photo_nums,
                                                         int(len(photo_nums) * 0.8), seed=0)  # 2割をvalidation用にとっておく
-    train = chainer.datasets.TransformDataset(train, Transform(args, photo_nums, True))
-    test = chainer.datasets.TransformDataset(test, Transform(args, photo_nums, False))
+    train = chainer.datasets.TransformDataset(train, Transform(args, photo_nums))
+    val = chainer.datasets.TransformDataset(val, Transform(args, photo_nums))
 
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
-    test_iter = chainer.iterators.SerialIterator(test, args.batchsize,
-                                                 repeat=False, shuffle=False)
+    val_iter = chainer.iterators.SerialIterator(val, args.batchsize,
+                                                repeat=False, shuffle=False)
 
     # 学習をどこまで行うかの設定
     stop_trigger = (args.epoch, 'epoch')
@@ -227,7 +231,7 @@ def main():
     trainer = training.Trainer(updater, stop_trigger, out=args.out)
 
     # testデータでの評価の設定
-    evaluator = MyEvaluator(test_iter, model, device=args.gpu, eval_func=model.loss_func)
+    evaluator = MyEvaluator(val_iter, model, device=args.gpu, eval_func=model.loss_func)
     evaluator.trigger = 1, 'epoch'
     trainer.extend(evaluator)
 
