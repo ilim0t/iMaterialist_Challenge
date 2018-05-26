@@ -82,20 +82,20 @@ class ResNet(chainer.Chain):
 
         h = F.average_pooling_2d(h, 2)
         h = self.l1(h)
-        return self.l2(h)
+        return F.tanh(self.l2(h))
 
     def loss_func(self, x, t):
         y = self.__call__(x)
 
-        TP = F.sum((y + 1) * 0.5 * t, axis=1)
-        FP = F.sum((y + 1) * 0.5 * (1 - t), axis=1)
-        FN = F.sum((1 - y) * 0.5 * t, axis=1)
+        # TP = F.sum((y + 1) * 0.5 * t, axis=1)
+        # FP = F.sum((y + 1) * 0.5 * (1 - t), axis=1)
+        # FN = F.sum((1 - y) * 0.5 * t, axis=1)
+        #
+        # loss = 1 - F.average(2 * TP / (2 * TP + FP + FN))  # F1 scoreを元に
 
-        loss = 1 - F.average(2 * TP / (2 * TP + FP + FN))  # F1 scoreを元に
-
-        # t_card = F.sum(t.astype("f"), axis=1)
-        # loss += F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) /
-        #                   (t_card * (t.shape[1] - t_card)))  # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
+        t_card = F.sum(t.astype("f"), axis=1)
+        loss = F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) /
+                          (t_card * (t.shape[1] - t_card)))  # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
 
         chainer.reporter.report({'loss': loss}, self)
 
@@ -171,16 +171,17 @@ class Mymodel(chainer.Chain):
             self.fc3 = L.Linear(n_out)
 
     def loss_func(self, x, t):
-        y = self.predict(x)
+        y = self.__call__(x)
+
+        # TP = F.sum((y + 1) * 0.5 * t, axis=1)
+        # FP = F.sum((y + 1) * 0.5 * (1 - t), axis=1)
+        # FN = F.sum((1 - y) * 0.5 * t, axis=1)
+        #
+        # loss = 1 - F.average(2 * TP / (2 * TP + FP + FN))  # F1 scoreを元に
+
         t_card = F.sum(t.astype("f"), axis=1)
-
-        TP = F.sum((y + 1) * 0.5 * t, axis=1)
-        FP = F.sum((y + 1) * 0.5 * (1 - t), axis=1)
-        FN = F.sum((1 - y) * 0.5 * t, axis=1)
-
-        loss = 1 - F.average(2 * TP / (2 * TP + FP + FN))  # F1 scoreを元に
-        # loss += F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) /
-        #                   (t_card * (t.shape[1] - t_card)))  # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
+        loss = F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) /
+                         (t_card * (t.shape[1] - t_card)))  # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
 
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y.data, t)
@@ -210,7 +211,7 @@ class Mymodel(chainer.Chain):
         f1 = np.average(2 * TP / (2 * TP + FP + FN))
         return accuracy, frequent_error, acc_66, accuracy2, f1
 
-    def predict(self, x):
+    def __call__(self, x):
         h = self.block1(x)
         h = F.relu(h)
         h = F.max_pooling_2d(h, 2)

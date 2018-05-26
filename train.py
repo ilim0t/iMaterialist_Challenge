@@ -15,7 +15,7 @@ import chainer.links as L
 from chainer import training
 from chainer.training import extensions
 
-import models.model
+import mymodel
 
 import numpy as np
 import argparse
@@ -141,7 +141,7 @@ def photos(args):
     photo_nums = [int(i.split('.')[0]) for i in photo_nums]
     photo_nums.sort()
 
-    if args.cleanup:  # 指定された場合 真っ白なファイルなどを除外する
+    if args.cleanup and args.object != 'test':  # 指定された場合 真っ白なファイルなどを除外する
         removed = []
         for i in photo_nums:
             # [4019, 16161, 35, 1485, 7742, 34262, 5098] 40000枚中これらのみ発見
@@ -191,7 +191,7 @@ def main():
     print('')
 
     # モデルの定義
-    model = models.model.ResNet(args.label_variety)
+    model = mymodel.ResNet(args.label_variety)
     #model = models.model.Mymodel(args.label_variety)
 
     # GPUで動かせるのならば動かす
@@ -280,10 +280,8 @@ def main():
     trainer.extend(extensions.ProgressBar(update_interval=args.interval))
 
     # 学習済みデータの読み込み設定
-    if os.path.isfile(args.resume) and args.resume:
-        pass
-    # chainer.serializers.load_npz("result/snapshot_iter_63", trainer)
-    # chainer.serializers.load_npz("result/snapshot_iter_0", model, path='updater/model:main/')
+    if args.resume:
+        chainer.serializers.load_npz(args.resume, model)
 
     # 学習の実行
     trainer.run()
