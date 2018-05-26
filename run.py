@@ -71,11 +71,8 @@ def main():
     print('# epoch: {}'.format(args.epoch))
     print('')
 
-    args.resume = 'result/snapshot_iter_25'
-    args.batchsize = 8
-
-    #model = mymodel.ResNet(args.label_variety)
-    model = mymodel.Mymodel(args.label_variety)
+    model = mymodel.ResNet(args.label_variety)
+    #model = mymodel.Mymodel(args.label_variety)
 
     # GPUで動かせるのならば動かす
     if args.gpu >= 0:
