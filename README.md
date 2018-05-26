@@ -5,3 +5,7 @@
 4. ダウンロードしたtrain.jsonをこの階層下のinputフォルダに追加します
 5. python [script.pyのパス] [train.jsonのパス] data/train_images と実行
 6. train.py を実行
+
+
+script.pyの63行目
+parse_dataset関数への第三引数を与えればよりたくさんダウンロードできます。

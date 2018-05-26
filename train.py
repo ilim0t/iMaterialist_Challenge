@@ -90,7 +90,8 @@ class Transform(object):
 
         with open('input/train.json', 'r') as f:  # 教師データの読み込み
             self.json_data = [[int(j) for j in i["labelId"]] for i in
-                              json.load(f)["annotations"][:photo_nums[-1]]]
+                              json.load(f)["annotations"][:photo_nums[-1 if args.total_photo_num == -1
+                              else args.total_photo_num - 1]]]
 
     def __call__(self, num):
         img_data = Image.open(self.data_folder + str(num) + '.jpg')
