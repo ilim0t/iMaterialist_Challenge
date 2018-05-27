@@ -35,7 +35,8 @@ class Block(chainer.Chain):
 
 # Network definition
 class ResNet(chainer.Chain):
-    def __init__(self, n_out):
+    def __init__(self, n_out, lossfunc=0):
+        self.lossfunc = lossfunc
         initializer = chainer.initializers.HeNormal()
         super(ResNet, self).__init__()
         with self.init_scope():
@@ -86,25 +87,25 @@ class ResNet(chainer.Chain):
 
     def loss_func(self, x, t):
         y = self.__call__(x)
+        loss = 0
+        if self.lossfunc == 1 or self.lossfunc == 2:
+            TP = F.sum((y + 1) * 0.5 * t, axis=1)
+            FP = F.sum((y + 1) * 0.5 * (1 - t), axis=1)
+            FN = F.sum((1 - y) * 0.5 * t, axis=1)
+            loss += 1 - F.average(2 * TP / (2 * TP + FP + FN))  # F1 scoreを元に
 
-        # TP = F.sum((y + 1) * 0.5 * t, axis=1)
-        # FP = F.sum((y + 1) * 0.5 * (1 - t), axis=1)
-        # FN = F.sum((1 - y) * 0.5 * t, axis=1)
-        #
-        # loss = 1 - F.average(2 * TP / (2 * TP + FP + FN))  # F1 scoreを元に
-
-        t_card = F.sum(t.astype("f"), axis=1)
-        loss = F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) /
-                          (t_card * (t.shape[1] - t_card)))  # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
+        if self.lossfunc == 0 or self.lossfunc == 2:
+            t_card = F.sum(t.astype("f"), axis=1)
+            loss += F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) /
+                              (t_card * (t.shape[1] - t_card)))  # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
 
         chainer.reporter.report({'loss': loss}, self)
-
         accuracy = self.accuracy(y.data, t)
         chainer.reporter.report({'acc': accuracy[0]}, self)  # dataひとつひとつのlabelが完全一致している確率
         chainer.reporter.report({'acc2': accuracy[1]}, self)  # すべてのbatchを通してlabelそれぞれの正解確率の平均
-        #chainer.reporter.report({'acc_66': accuracy[2]}, self)  # 66番ラベルの正解率
+        # chainer.reporter.report({'acc_66': accuracy[2]}, self)  # 66番ラベルの正解率
         chainer.reporter.report({'f1': accuracy[3]}, self)
-        #chainer.reporter.report({'freq_err': accuracy[4]}, self)  # batchの中で最も多く間違って判断したlabel
+        # chainer.reporter.report({'freq_err': accuracy[4]}, self)  # batchの中で最も多く間違って判断したlabel
         return loss
 
     def accuracy(self, y, t):
@@ -124,16 +125,88 @@ class ResNet(chainer.Chain):
         return accuracy, accuracy2, acc_66, f1, frequent_error
 
 
-#以下は過去のmodel
-
-
 class Block2(chainer.Chain):
+    def __init__(self, out_channels, ksize, in_channels=None, init_stride=None, stride=1, pad=1):
+        initializer = chainer.initializers.HeNormal()
+        super(Block2, self).__init__()
+        with self.init_scope():
+            self.bn1 = L.BatchNormalization(in_channels or out_channels)
+            self.conv1 = L.Convolution2D(None, out_channels, ksize, init_stride or stride, pad, initialW=initializer)
+            self.bn2 = L.BatchNormalization(out_channels)
+            self.conv2 = L.Convolution2D(None, out_channels, ksize, stride, pad, initialW=initializer)
+
+    def __call__(self, x, ratio):
+        h = F.relu(self.bn1(x))
+        h = self.conv1(h)
+        h = F.relu(self.bn2(h))
+        h = F.dropout(h, ratio)
+        h = self.conv2(h)
+
+        if x.shape[2:] != h.shape[2:]:  # skipではないほうのデータの縦×横がこのblock中で小さくなっていた場合skipの方もそれに合わせて小さくする
+            x = F.average_pooling_2d(x, 1, 2)
+        if x.shape[1] != h.shape[1]:  # skipではない方のデータのチャンネル数がこのblock内で増えている場合skipの方もそれに合わせて増やす
+            xp = chainer.cuda.get_array_module(x.data)  # gupが使える場合も想定
+            p = chainer.Variable(xp.zeros((x.shape[0], h.shape[1] - x.shape[1], *x.shape[2:]), dtype=xp.float32))
+            x = F.concat((x, p))
+        return x + h
+
+
+# Network definition
+class RES_SPP_net(ResNet):
+    def __init__(self, n_out, lossfunc=0):
+        self.lossfunc = lossfunc
+        initializer = chainer.initializers.HeNormal()
+        super(ResNet, self).__init__()
+        with self.init_scope():
+            self.conv1 = L.Convolution2D(None, 64, 7, pad=2)
+
+            self.block1_1 = Block2(64, 3, init_stride=2, pad=1)
+            self.block1_2 = Block2(64, 3, pad=1)
+            self.block1_3 = Block2(64, 3, pad=1)
+
+            self.block2_1 = Block2(128, 3, 64, init_stride=2, pad=1)
+            self.block2_2 = Block2(128, 3, pad=1)
+            self.block2_3 = Block2(128, 3, pad=1)
+
+            self.block3_1 = Block2(256, 3, 128, init_stride=2, pad=1)
+            self.block3_2 = Block2(256, 3, pad=1)
+            self.block3_3 = Block2(256, 3, pad=1)
+
+            self.l1 = L.Linear(2048, initialW=initializer)
+            self.l2 = L.Linear(n_out, initialW=initializer)
+
+    def __call__(self, x):
+        h = self.conv1(x)
+        F.max_pooling_2d(h, 2)
+
+        h = self.block1_1(h, 0.2)
+        h = self.block1_2(h, 0.2)
+        h = self.block1_3(h, 0.2)
+
+        h = self.block2_1(h, 0.3)
+        h = self.block2_2(h, 0.3)
+        h = self.block2_3(h, 0.3)
+
+        h = self.block3_1(h, 0.4)
+        h = self.block3_2(h, 0.4)
+        h = self.block3_3(h, 0.4)
+        # h = F.spatial_pyramid_pooling_2d(h, 3, F.average_pooling_2d)
+        h = F.spatial_pyramid_pooling_2d(h, 3, F.MaxPooling2D)
+        h = self.l1(h)
+        return F.tanh(self.l2(h))
+
+
+import matplotlib as mpl
+import os
+
+
+class Block3(chainer.Chain):
     """
     畳み込み層
     """
     def __init__(self, out_channels, ksize, stride=1, pad=0):
         initializer = chainer.initializers.HeNormal()
-        super(Block2, self).__init__()
+        super(Block3, self).__init__()
         with self.init_scope():
             self.conv = L.Convolution2D(None, out_channels, ksize, stride, pad, initialW=initializer)
             self.bn = L.BatchNormalization(out_channels)
@@ -144,11 +217,12 @@ class Block2(chainer.Chain):
         return F.relu(h)
 
 
-class Mymodel(chainer.Chain):
-    def __init__(self, n_out):
+class Mymodel(ResNet):
+    def __init__(self, n_out, lossfunc):
         self.n = 1
+        self.lossfunc = lossfunc
         self.accs = [[], [], [], [], [], []]
-        super(Mymodel, self).__init__()
+        super(ResNet, self).__init__()
         initializer = chainer.initializers.HeNormal()
         with self.init_scope():
             # self.block1 = Block(32, 5, pad=1)  # n_in = args.size (300)^2 * 3 = 270000
@@ -157,59 +231,18 @@ class Mymodel(chainer.Chain):
             # self.block4 = Block(256, 3, pad=1)
             # self.block5 = Block(128, 3, pad=1)
 
-            self.block1 = Block2(32, 3)  # n_in = args.size (300)^2 * 3 = 270000
-            self.block2 = Block2(64, 2)
-            self.block3 = Block2(128, 2)
-            self.block4 = Block2(256, 2)
-            self.block5 = Block2(256, 2)
-            self.block6 = Block2(128, 2)
+            self.block1 = Block3(32, 3)  # n_in = args.size (300)^2 * 3 = 270000
+            self.block2 = Block3(64, 2)
+            self.block3 = Block3(128, 2)
+            self.block4 = Block3(256, 2)
+            self.block5 = Block3(256, 2)
+            self.block6 = Block3(128, 2)
 
             self.fc1 = L.Linear(512, initialW=initializer)
             self.fc2 = L.Linear(512, initialW=initializer)
             # ↓中身を調べている最中
             # self.bn_fc1 = L.BatchNormalization(512)
             self.fc3 = L.Linear(n_out)
-
-    def loss_func(self, x, t):
-        y = self.__call__(x)
-
-        # TP = F.sum((y + 1) * 0.5 * t, axis=1)
-        # FP = F.sum((y + 1) * 0.5 * (1 - t), axis=1)
-        # FN = F.sum((1 - y) * 0.5 * t, axis=1)
-        #
-        # loss = 1 - F.average(2 * TP / (2 * TP + FP + FN))  # F1 scoreを元に
-
-        t_card = F.sum(t.astype("f"), axis=1)
-        loss = F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) /
-                         (t_card * (t.shape[1] - t_card)))  # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
-
-        chainer.reporter.report({'loss': loss}, self)
-        accuracy = self.accuracy(y.data, t)
-        chainer.reporter.report({'acc': accuracy[0]}, self)  # dataひとつひとつのlabelが完全一致している確率
-        chainer.reporter.report({'freq_err': accuracy[1]}, self)  # batchの中で最も多く間違って判断したlabel
-        chainer.reporter.report({'acc_66': accuracy[2]}, self)  # 66番ラベルの正解率
-        chainer.reporter.report({'acc2': accuracy[3]}, self)  # すべてのbatchを通してlabelそれぞれの正解確率の平均
-        chainer.reporter.report({'f1': accuracy[4]}, self)
-
-        if t.shape[0] == 256:
-            self.plot_acc([loss.data] + list(accuracy))
-        return loss
-
-    def accuracy(self, y, t):
-        y = chainer.cuda.to_cpu(y)
-        t = chainer.cuda.to_cpu(t)
-
-        y_binary = (y > 0).astype(int)
-        accuracy = sum([1 if all(i) else 0 for i in (y_binary == t)]) / len(y)  # dataひとつひとつのlabelが完全一致している確率
-        frequent_error = np.sum((y_binary != t).astype(int), 0).argsort()[-1] + 1  # batchの中で最も多く間違って判断したlabel
-        acc_66 = np.sum((y_binary[:, 65] == t[:, 65]).astype(int)) / len(y)  # 66番ラベルの正解率
-        accuracy2 = np.sum((y_binary == t).astype(int)) / len(y) / len(y[0])  # すべてのbatchを通してlabelそれぞれの正解確率の平均
-
-        TP = np.sum(y_binary * t, axis=1)
-        FP = np.sum(y_binary * (1 - t), axis=1)
-        FN = np.sum((1 - y_binary) * t, axis=1)
-        f1 = np.average(2 * TP / (2 * TP + FP + FN))
-        return accuracy, frequent_error, acc_66, accuracy2, f1
 
     def __call__(self, x):
         h = self.block1(x)
@@ -276,3 +309,20 @@ class Mymodel(chainer.Chain):
                 os.mkdir('progress')
             mpl.pyplot.savefig('progress/' + name + '.png')
             mpl.pyplot.clf()
+
+
+class Lite(ResNet):
+    def __init__(self, n_out, lossfunc):
+        self.lossfunc = lossfunc
+        super(ResNet, self).__init__()
+        with self.init_scope():
+            self.conv = L.Convolution2D(4, 8, stride=4)
+            self.bn = L.BatchNormalization(4)
+            self.fc = L.Linear(n_out)
+
+    def __call__(self, x):
+        h = F.max_pooling_2d(x, 4)
+        h = self.conv(h)
+        h = self.bn(h)
+        h = self.fc(h)
+        return F.tanh(h)
