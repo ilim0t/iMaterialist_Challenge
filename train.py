@@ -31,7 +31,7 @@ if platform.system() != "Darwin":
     mpl.use('Agg')
 import matplotlib.pyplot as plt
 
-from scipy.ndimage.interpolation import rotate
+from scipy.ndimage import rotate
 from scipy.misc import imresize
 
 import shutil
@@ -74,11 +74,13 @@ class MyEvaluator(extensions.Evaluator):
                         eval_func(in_arrays)
 
             summary.add(observation)
-            freq_errs[observation['validation/main/freq_err']] = \
-                freq_errs.get(observation['validation/main/freq_err'], 0) + 1
+            if 'validation/main/freq_err' in observation.keys():
+                freq_errs[observation['validation/main/freq_err']] = \
+                    freq_errs.get(observation['validation/main/freq_err'], 0) + 1
 
         d = {name: summary.compute_mean() for name, summary in six.iteritems(summary._summaries)}
-        d['validation/main/freq_err'] = max([(v, k) for k, v in freq_errs.items()])[1]
+        if 'validation/main/freq_err' in observation.keys():
+            d['validation/main/freq_err'] = max([(v, k) for k, v in freq_errs.items()])[1]
         return {'val/' + name.split('/')[-1]: sammary for name, sammary in d.items()}
 
 
@@ -92,67 +94,124 @@ class Transform(object):
         if isTrain:
             with open('input/train.json', 'r') as f:  # 教師データの読み込み
                 self.json_data = [[int(j) for j in i["labelId"]] for i in
-                                  json.load(f)["annotations"][:photo_nums[-1 if args.total_photo_num == -1
-                                  else args.total_photo_num - 1]]]
+                                  json.load(f)["annotations"][:photo_nums[-1 if args.total_photo_num == -1 else
+                                  args.total_photo_num - 1]]]
 
     def __call__(self, num):
+        # 写真を読み込み配列に
         img_data = Image.open(self.data_folder + str(num) + '.jpg')
         array_img = np.asarray(img_data)
 
         # 各種 augmentation
+        array_img = self.crop(array_img)
+        # if (array_img[:2] != [self.size]).any():
+        #     array_img = imresize(array_img, [self.size] * 2)
         if np.random.rand() < 0.5:
             array_img = self.rotation(array_img)
-        if (array_img[:2] != [self.size]).any():
-            array_img = imresize(array_img, [self.size] * 2)
         array_img = self.horizontal_flip(array_img)
 
         array_img = self.zscore(array_img)
-        array_img = array_img.transpose(2, 0, 1).astype(np.float32)
+        # mpl.pyplot.imshow(array_img)  # 表示
 
+        array_img = array_img.transpose(2, 0, 1).astype(np.float32)
         if not self.isTrain:
             return array_img
+
         label = np.array([1 if i in self.json_data[num - 1] else 0 for i in range(1, self.label_variety + 1)])
         # すべてのlabel番号に対しlebelがついているならば1,そうでないならば0を入れたリスト
         # 例: 1, 2, 10 のラベルがついている場合
         # [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, ...]
         return array_img, label
 
-    def horizontal_flip(self, img):
-        # 左右反転
+    def horizontal_flip(self, img):  # 左右反転
         return img[:, ::-1, :]
 
-    def rotation(self, img):
-        # 回転
-        angle = np.random.randint(-20, 20)
-        img = rotate(img, angle)
+    def rotation(self, img):  # 回転
+        angle = np.random.randint(-10, 10)
+        img = rotate(img, angle, cval=255)
+        img = imresize(img, [self.size] * 2)
         return img
 
-    def zscore(self, img):
-        # 正規化
-        xmean = np.mean(img)  # 110~170
-        xstd = np.std(img)  # 80~110
-        img = (img - xmean) / xstd
+    def zscore(self, img):  # 正規化(準備中)
+        # xmean = np.mean(img)  # 110~170
+        # xstd = np.std(img)  # 80~110
+        # img = (img - xmean) / xstd
+        return img / 255.
+
+    def crop(self, img):  # 切り抜き, サイズ合わせ
+        if img.shape[0] <= self.size or img.shape[1] <= self.size:
+            # 少なくとも片辺の長さがが規定以下のとき
+            # アス比が2:1以上ならばちぎって横に並べて(文字の折返しみたいに)長方形にした後長辺が最大になるように拡大しあまりを白で埋める
+            # アス比がそれ以下ならそのまま長辺が最大になるように拡大しあまりを白で埋める
+            ratio = max(img.shape[:2]) / min(img.shape[:2])
+            if ratio >= 4:
+                n = int(ratio / 2)  # 分割数
+                # サイズが分割数で割り切れないとエラーが出るため揃える
+                size = int(np.max(img.shape[:2]) / n) * n
+                start = int((np.max(img.shape[:2]) - size) / 2)
+                if np.argmax(img.shape[:2]) == 0:
+                    img = img[start:start + size, :, :]
+                else:
+                    img = img[:, start:start + size, :]
+                # 分割してずらし結合
+                imgs = np.split(img, n, axis=np.argmax(img.shape[:2]))
+                img = np.concatenate(imgs, axis=np.argmin(img.shape[:2]))
+            img = self.assign(img)
+        else:
+            # 両辺ともに既定値以上ならば短辺×0.8以上の枠でランダムに切り出す
+            size = self.size if max(self.size, int(min(img.shape[:2])) * 0.8) == min(img.shape[:2]) else\
+                np.random.randint(max(self.size, int(min(img.shape[:2])) * 0.8), min(img.shape[:2]))
+            top = 0 if 0 == img.shape[0] - size else np.random.randint(0, img.shape[0] - size)
+            left = 0 if 0 == img.shape[1] - size else np.random.randint(0, img.shape[1] - size)
+            img = img[top:top + size, left:left + size, :]
+            img = imresize(img, [self.size] * 2)
+        return img
+
+    def assign(self, img):
+
+        # 長辺を最大化するようにリサイズ
+        if np.argmax(img.shape[:2]) == 0:
+            size = (self.size, int(img.shape[1] * self.size / img.shape[0]))
+        else:
+            size = (int(img.shape[0] * self.size / img.shape[1]), self.size)
+        img = imresize(img, size)
+
+        # 短辺の両端を白く穴埋めして規定値に揃える
+        if img.shape[0] != self.size:
+            harf = int((self.size - img.shape[0]) / 2)
+            imgs = [np.full((harf, img.shape[1], 3), 255), img,
+                    np.full((self.size - img.shape[0] - harf, img.shape[1], 3), 255)]
+            img = np.concatenate(imgs, axis=0)
+        if img.shape[1] != self.size:
+            harf = int((self.size - img.shape[1]) / 2)
+            imgs = [np.full((self.size, harf, 3), 255), img,
+                    np.full((self.size, self.size - img.shape[1] - harf, 3), 255)]
+            img = np.concatenate(imgs, axis=1)
         return img
 
 
 def photos(args):
-    # 存在するファイルから写真のみ列挙してself.file_numsに格納
+    # 存在するファイルから写真のみ列挙して返す
     data_folder = 'data/' + args.object + '_images/'
     photo_nums = os.listdir(data_folder)
-    for i in ['.gitkeep', '.DS_Store', 'trash']:  # 画像ではないファイル,ディレクトリを除外
-        if i in photo_nums:
-            photo_nums.remove(i)
-    photo_nums = [int(i.split('.')[0]) for i in photo_nums]
+
+    # for i in ['.gitkeep', '.DS_Store', 'trash']:  # 画像ではないファイル,ディレクトリを除外
+    #     if i in photo_nums:
+    #         photo_nums.remove(i)
+    photo_nums = [int(i.split('.')[0]) for i in photo_nums
+                  if '.' in i and i.split('.')[1] == 'jpg' and i.split('.')[0][0] != '.']
     photo_nums.sort()
 
     if args.cleanup and args.object != 'test':  # 指定された場合 真っ白なファイルなどを除外する
         removed = []
         for i in photo_nums:
-            # [4019, 16161, 35, 1485, 7742, 34262, 5098] 40000枚中これらのみ発見
+            # 過去に見つかった除外対象写真と全く同じサイズのとき除外
+            # その代表photo_num: [4019, 16161, 35, 1485, 7742, 34262, 5098] 40000枚中これらのみ発見
             if os.path.getsize(data_folder + str(i) + '.jpg') in [874, 1854, 2588, 5106, 11197, 12814, 6305]:
                 photo_nums.remove(i)
                 removed.append(i)
                 shutil.move(data_folder + str(i) + '.jpg', data_folder + 'trash/' + str(i) + '.jpg')
+        # 見つかった除外対象写真一覧を保存
         with open('removed.txt', 'wb') as f:
             pickle.dump(removed, f)
 
@@ -187,16 +246,22 @@ def main():
                         help='邪魔な画像を取り除く'),
     parser.add_argument('--interval', '-i', type=int, default=10,
                         help='何iteraionごとに画面に出力するか')
+    parser.add_argument('--model', '-m', type=int, default=0,
+                        help='使うモデルの種類')
+    parser.add_argument('--lossfunc', '-l', type=int, default=0,
+                        help='使うlossの種類')
     args = parser.parse_args()
+
+    model = ['ResNet', 'Mymodel', 'RES_SPP_net', 'Lite'][args.model]  # RES_SPP_netはchainerで可変量サイズの入力を実装するのが難しかったので頓挫
 
     print('GPU: {}'.format(args.gpu))
     print('# Minibatch-size: {}'.format(args.batchsize))
     print('# epoch: {}'.format(args.epoch))
+    print('# model: {}'.format(model))
     print('')
 
     # モデルの定義
-    model = mymodel.ResNet(args.label_variety)
-    #model = mymodel.Mymodel(args.label_variety)
+    model = getattr(mymodel, model)(args.label_variety, args.lossfunc)
 
     # GPUで動かせるのならば動かす
     if args.gpu >= 0:
@@ -278,7 +343,6 @@ def main():
     #      'main/acc_66', 'main/f1', 'val/f1',
     #      'main/freq_err', 'val/freq_err', 'elapsed_time'
     #      ]))
-
 
     # プログレスバー表示の設定
     trainer.extend(extensions.ProgressBar(update_interval=args.interval))

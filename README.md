@@ -9,3 +9,5 @@
 
 script.pyの63行目
 parse_dataset関数への第三引数を与えればよりたくさんダウンロードできます。
+
+run.py -r [snapshotのパス]で data/test_imagesのデータを推測して,result.csvに出力します。

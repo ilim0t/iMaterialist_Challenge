@@ -63,16 +63,20 @@ def main():
     parser.add_argument('--cleanup', '-c', dest='cleanup', action='store_true',
                         help='邪魔な画像を取り除く'),
     parser.add_argument('--interval', '-i', type=int, default=10,
-                        help='何iteraionごとに画面に出力するか')
+                        help='何iteraionごとに画面に出力するか'),
+    parser.add_argument('--model', '-m', type=int, default=0,
+                        help='使うモデルの種類'),
+    parser.add_argument('--lossfunc', '-l', type=int, default=0,
+                        help='使うlossの種類')
     args = parser.parse_args()
 
     print('GPU: {}'.format(args.gpu))
     print('# Minibatch-size: {}'.format(args.batchsize))
     print('# epoch: {}'.format(args.epoch))
+    print('# model: {}'.format(['ResNet', 'Mymodel'][args.model]))
     print('')
 
-    model = mymodel.ResNet(args.label_variety)
-    #model = mymodel.Mymodel(args.label_variety)
+    model = getattr(mymodel, ['ResNet', 'Mymodel'][args.model])(args.label_variety, args.lossfunc)
 
     # GPUで動かせるのならば動かす
     if args.gpu >= 0:
@@ -87,21 +91,27 @@ def main():
     chainer.serializers.load_npz(args.resume, model, path='updater/model:main/')
 
     pbar = tqdm.tqdm(total=len(photo_nums))
-
     with chainer.using_config('train', False):
         list0 = []
         num = 1
         for batch in test_iter:
-            in_arrays = convert.concat_examples(batch, args.gpu)
-            y = model(in_arrays)
-            for i in y.data > 0:
-                list0.append([str(num), ' '.join((np.where(i)[0] + 1).astype(str))])
-                num += 1
-                pbar.update(1)
-    pbar.close()
+            try:
+                in_arrays = convert.concat_examples(batch, args.gpu)
+                y = model(in_arrays)
+                for i in y.data > 0:
+                    list0.append([str(num), ' '.join((np.where(i)[0] + 1).astype(str))])
+                    num += 1
+                    pbar.update(1)
+            except Exception as e:
+                print('')
+                print(num)
+                print(e)
+                #print(batch)
+                print('')
+        pbar.close()
 
-    df = pd.DataFrame(list0, columns=['image_id', 'label_id'])
-    df.to_csv("result.csv", index=False)
+        df = pd.DataFrame(list0, columns=['image_id', 'label_id'])
+        df.to_csv("result.csv", index=False)
 
 
 if __name__ == '__main__':
