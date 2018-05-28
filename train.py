@@ -241,7 +241,7 @@ def main():
     parser.add_argument('--resume', '-r', default='',
                         help='指定したsnapshopから継続して学習します')
     parser.add_argument('--frequency', '-f', type=int, default=1,
-                        help='Frequency of taking a snapshot')
+                        help='指定したepotchごとに重みを保存します')
     parser.add_argument('--gpu', '-g', type=int, default=-1,
                         help='使うGPUの番号')
     parser.add_argument('--size', '-s', type=int, default=256,
@@ -283,6 +283,9 @@ def main():
 
     # optimizerのセットアップ
     optimizer = chainer.optimizers.Adam()
+    # optimizer = chainer.optimizers.MomentumSGD(0.1, 0.9)  # https://arxiv.org/pdf/1605.07146.pdf
+    # chainer.optimizer.WeightDecay(0.0005)
+
     optimizer.setup(model)
 
     # データセットのセットアップ
@@ -349,7 +352,7 @@ def main():
     # 各データでの評価の表示(欄に関する)設定
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'main/loss', 'val/loss',
-         'main/acc', 'val/acc', 'main/f1', 'val/f1', 'elapsed_time']))
+         'main/acc', 'val/acc', 'main/acc2', 'val/acc2','main/f1', 'val/f1', 'elapsed_time']))
     # trainer.extend(extensions.PrintReport(
     #     ['epoch', 'iteration', 'main/loss', 'val/loss',
     #      'main/acc', 'val/acc', 'main/acc2', 'val/acc2',
@@ -362,7 +365,7 @@ def main():
 
     # 学習済みデータの読み込み設定
     if args.resume:
-        chainer.serializers.load_npz(args.resume, model)
+        chainer.serializers.load_npz(args.resume, model, path='updater/model:main/')  # なぜかpathを外すと読み込めなくなってしまった 原因不明
 
     # 学習の実行
     trainer.run()

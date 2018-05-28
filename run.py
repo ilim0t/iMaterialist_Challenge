@@ -36,7 +36,6 @@ import matplotlib.pyplot as plt
 import tqdm
 import pandas as pd
 
-
 def main():
     # 各種パラメータ設定
     parser = argparse.ArgumentParser(description='iMaterialist_Challenge:')
@@ -52,7 +51,7 @@ def main():
                         help='Frequency of taking a snapshot')
     parser.add_argument('--gpu', '-g', type=int, default=-1,
                         help='使うGPUの番号')
-    parser.add_argument('--size', '-s', type=int, default=128,
+    parser.add_argument('--size', '-s', type=int, default=256,
                         help='正規化する時の一辺のpx'),
     parser.add_argument('--label_variety', type=int, default=228,
                         help='確認できたlabelの総数 この中で判断する'),
@@ -70,13 +69,17 @@ def main():
                         help='使うlossの種類')
     args = parser.parse_args()
 
+    # liteがついているのはsizeをデフォルトの半分にするの前提で作っています
+    model = ['ResNet', 'ResNet_lite', 'Bottle_neck_RES_net', 'Bottle_neck_RES_net_lite',
+             'Mymodel', 'RES_SPP_net', 'Lite'][args.model]  # RES_SPP_netはchainerで可変量サイズの入力を実装するのが難しかったので頓挫
+
     print('GPU: {}'.format(args.gpu))
     print('# Minibatch-size: {}'.format(args.batchsize))
     print('# epoch: {}'.format(args.epoch))
-    print('# model: {}'.format(['ResNet', 'Mymodel'][args.model]))
+    print('# model: {}'.format(model))
     print('')
 
-    model = getattr(mymodel, ['ResNet', 'Mymodel'][args.model])(args.label_variety, args.lossfunc)
+    model = getattr(mymodel, model)(args.label_variety, args.lossfunc)
 
     # GPUで動かせるのならば動かす
     if args.gpu >= 0:
@@ -84,7 +87,7 @@ def main():
         model.to_gpu()
 
     photo_nums = train.photos(args)
-    test = chainer.datasets.TransformDataset(photo_nums, train.Transform(args, photo_nums, False))
+    test = chainer.datasets.TransformDataset(photo_nums, train.Transform(args, photo_nums, False, False if args.model == 5 else True))
     test_iter = chainer.iterators.SerialIterator(test, args.batchsize,
                                                  repeat=False, shuffle=False)
 

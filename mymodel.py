@@ -36,7 +36,7 @@ class Res_block(chainer.Chain):
             xp = chainer.cuda.get_array_module(x.data)  # gupが使える場合も想定
             p = chainer.Variable(xp.zeros((x.shape[0], h.shape[1] - x.shape[1], *x.shape[2:]), dtype=xp.float32))
             x = F.concat((x, p))
-        return (x + h) * (1 - ratio)  # ?
+        return x + h
 
 
 # Network definition
@@ -99,6 +99,19 @@ class ResNet(chainer.Chain):  # 18-layer
             t_card = F.sum(t.astype("f"), axis=1)
             loss += F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) /
                               (t_card * (t.shape[1] - t_card)))  # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
+            """
+            |Y_i|行列  = t_card = F.sum(t.astype("f"), axis=1)
+            |Y[bar]_i|行列 = t.shape[1] - t_card
+            
+             Σ exp(-(C_k-C_l))
+            =Σ exp(-C_k+C_l)
+            =Σ exp(-C_k)*exp(C_l)
+            =(exp(-C_k1), exp(-C_k2), ...) * (exp(C_l1), exp(C_l2), ...)
+            =(exp(-x) dot [1 if x∈Y else 0]) * (exp(x)行列 dot [0 if x∈Y else 1])
+            =F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1)
+            
+            ∴loss = loss += F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) / (t_card * (t.shape[1] - t_card)))
+            """
 
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y.data, t)
@@ -159,7 +172,7 @@ class Bottle_neck_block(chainer.Chain):
             xp = chainer.cuda.get_array_module(x.data)  # gupが使える場合も想定
             p = chainer.Variable(xp.zeros((x.shape[0], h.shape[1] - x.shape[1], *x.shape[2:]), dtype=xp.float32))
             x = F.concat((x, p))
-        return (x + h) * (1 - ratio) # ?
+        return x + h
 
 
 class Bottle_neck_RES_net(ResNet):  # 18-layer
