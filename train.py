@@ -84,11 +84,12 @@ class MyEvaluator(extensions.Evaluator):
 
 
 class Transform(object):
-    def __init__(self, args, photo_nums, isTrain=True):
+    def __init__(self, args, photo_nums, isTrain=True, isResize=True):
         self.label_variety = args.label_variety
         self.size = args.size
         self.data_folder = 'data/' + args.object + '_images/'
         self.isTrain = isTrain
+        self.isResize = isResize
 
         if isTrain:
             with open('input/train.json', 'r') as f:  # 教師データの読み込み
@@ -128,7 +129,8 @@ class Transform(object):
     def rotation(self, img):  # 回転
         angle = np.random.randint(-10, 10)
         img = rotate(img, angle, cval=255)
-        img = imresize(img, [self.size] * 2)
+        if self.isResize:
+            img = imresize(img, [self.size] * 2)
         return img
 
     def zscore(self, img):  # 正規化(準備中)
@@ -138,11 +140,15 @@ class Transform(object):
         return img / 255.
 
     def crop(self, img):  # 切り抜き, サイズ合わせ
-        if img.shape[0] <= self.size or img.shape[1] <= self.size:
+        if not self.isResize:
+            if img.shape[0] > self.size * 2 and img.shape[1] > self.size * 2:
+                img = imresize(img, (img.shape[0] // 2, img.shape[1] // 2))
+            return img
+        ratio = max(img.shape[:2]) / min(img.shape[:2])
+        if ratio >= 4 or img.shape[0] <= self.size or img.shape[1] <= self.size:
             # 少なくとも片辺の長さがが規定以下のとき
             # アス比が4:1以上ならばちぎって横に並べて(文字の折返しみたいに)長方形にした後長辺が最大になるように拡大しあまりを白で埋める
             # アス比がそれ以下ならそのまま長辺が最大になるように拡大しあまりを白で埋める
-            ratio = max(img.shape[:2]) / min(img.shape[:2])
             if ratio >= 4:
                 img = self.divide(img, int(ratio / 2))
             img = self.assign(img)
@@ -238,7 +244,7 @@ def main():
                         help='Frequency of taking a snapshot')
     parser.add_argument('--gpu', '-g', type=int, default=-1,
                         help='使うGPUの番号')
-    parser.add_argument('--size', '-s', type=int, default=128,
+    parser.add_argument('--size', '-s', type=int, default=256,
                         help='正規化する時の一辺のpx'),
     parser.add_argument('--label_variety', type=int, default=228,
                         help='確認できたlabelの総数 この中で判断する'),
@@ -256,12 +262,15 @@ def main():
                         help='使うlossの種類')
     args = parser.parse_args()
 
-    model = ['ResNet', 'Mymodel', 'RES_SPP_net', 'Lite'][args.model]  # RES_SPP_netはchainerで可変量サイズの入力を実装するのが難しかったので頓挫
+    # liteがついているのはsizeをデフォルトの半分にするの前提で作っています
+    model = ['ResNet', 'ResNet_lite', 'Bottle_neck_RES_net', 'Bottle_neck_RES_net_lite',
+             'Mymodel', 'RES_SPP_net', 'Lite'][args.model]  # RES_SPP_netはchainerで可変量サイズの入力を実装するのが難しかったので頓挫
 
     print('GPU: {}'.format(args.gpu))
     print('# Minibatch-size: {}'.format(args.batchsize))
     print('# epoch: {}'.format(args.epoch))
     print('# model: {}'.format(model))
+    print('# size: {}'.format(args.size))
     print('')
 
     # モデルの定義
@@ -280,8 +289,8 @@ def main():
     photo_nums = photos(args)
     train, val = chainer.datasets.split_dataset_random(photo_nums,
                                                         int(len(photo_nums) * 0.8), seed=0)  # 2割をvalidation用にとっておく
-    train = chainer.datasets.TransformDataset(train, Transform(args, photo_nums))
-    val = chainer.datasets.TransformDataset(val, Transform(args, photo_nums))
+    train = chainer.datasets.TransformDataset(train, Transform(args, photo_nums, True, False if args.model == 5 else True))
+    val = chainer.datasets.TransformDataset(val, Transform(args, photo_nums, True, False if args.model == 5 else True))
 
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
     val_iter = chainer.iterators.SerialIterator(val, args.batchsize,

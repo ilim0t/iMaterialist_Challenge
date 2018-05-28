@@ -7,82 +7,83 @@ import chainer.links as L
 import numpy as np
 
 
-class Block(chainer.Chain):
+class Res_block(chainer.Chain):
     def __init__(self, out_channels, ksize, in_channels=None, init_stride=None, stride=1, pad=1):
         initializer = chainer.initializers.HeNormal()
-        super(Block, self).__init__()
+        super(Res_block, self).__init__()
         with self.init_scope():
+            # pre-activation
             self.bn1 = L.BatchNormalization(in_channels or out_channels)
             self.conv1 = L.Convolution2D(None, out_channels, ksize, init_stride or stride, pad, initialW=initializer)
             self.bn2 = L.BatchNormalization(out_channels)
             self.conv2 = L.Convolution2D(None, out_channels, ksize, stride, pad, initialW=initializer)
+            self.bn3 = L.BatchNormalization(out_channels)
+
+            self.xconv = L.Convolution2D(None, out_channels, 1, stride=2, initialW=initializer)
 
     def __call__(self, x, ratio):
-        h = F.relu(self.bn1(x))
+        h = self.bn1(x)
         h = self.conv1(h)
         h = F.relu(self.bn2(h))
-        h = F.dropout(h, ratio)
+        h = F.dropout(h, ratio)  # Stochastic Depth
         h = self.conv2(h)
+        h = self.bn3(h)  # 必要?
 
         if x.shape[2:] != h.shape[2:]:  # skipではないほうのデータの縦×横がこのblock中で小さくなっていた場合skipの方もそれに合わせて小さくする
-            x = F.average_pooling_2d(x, 1, 2)
-        if x.shape[1] != h.shape[1]:  # skipではない方のデータのチャンネル数がこのblock内で増えている場合skipの方もそれに合わせて増やす
+            #x = F.average_pooling_2d(x, 1, 2)  # これでいいのか？
+            x = self.xconv(x)
+        if x.shape[1] != h.shape[1]:  # skipではない方のデータのチャンネル数がこのblock内で増えている場合skipの方もそれに合わせて増やす(zero-padding)
             xp = chainer.cuda.get_array_module(x.data)  # gupが使える場合も想定
             p = chainer.Variable(xp.zeros((x.shape[0], h.shape[1] - x.shape[1], *x.shape[2:]), dtype=xp.float32))
             x = F.concat((x, p))
-        return x + h
+        return (x + h) * (1 - ratio)  # ?
 
 
 # Network definition
-class ResNet(chainer.Chain):
+class ResNet(chainer.Chain):  # 18-layer
     def __init__(self, n_out, lossfunc=0):
         self.lossfunc = lossfunc
         initializer = chainer.initializers.HeNormal()
         super(ResNet, self).__init__()
         with self.init_scope():
-            self.conv1 = L.Convolution2D(None, 64, 7, pad=2)
+            self.conv1 = L.Convolution2D(None, 64, 7, stride=2, pad=3)
 
-            self.block1_1 = Block(64, 3, init_stride=2, pad=1)
-            self.block1_2 = Block(64, 3, pad=1)
-            self.block1_3 = Block(64, 3, pad=1)
+            # Wide Residual Network
+            self.block1_1 = Res_block(64, 3, pad=1)
+            self.block1_2 = Res_block(64, 3, pad=1)
 
-            self.block2_1 = Block(128, 3, 64, init_stride=2, pad=1)
-            self.block2_2 = Block(128, 3, pad=1)
-            self.block2_3 = Block(128, 3, pad=1)
+            self.block2_1 = Res_block(128, 3, 64, init_stride=2, pad=1)
+            self.block2_2 = Res_block(128, 3, pad=1)
 
-            self.block3_1 = Block(256, 3, 128, init_stride=2, pad=1)
-            self.block3_2 = Block(256, 3, pad=1)
-            self.block3_3 = Block(256, 3, pad=1)
+            self.block3_1 = Res_block(256, 3, 128, init_stride=2, pad=1)
+            self.block3_2 = Res_block(256, 3, pad=1)
 
-            self.block4_1 = Block(512, 3, 256, init_stride=2, pad=1)
-            self.block4_2 = Block(512, 3, pad=1)
-            self.block4_3 = Block(512, 3, pad=1)
+            self.block4_1 = Res_block(512, 3, 256, init_stride=2, pad=1)
+            self.block4_2 = Res_block(512, 3, pad=1)
 
-            self.l1 = L.Linear(2048, initialW=initializer)
+            #self.l1 = L.Linear(1000, initialW=initializer)
             self.l2 = L.Linear(n_out, initialW=initializer)
 
-    def __call__(self, x):
-        h = self.conv1(x)
-        F.max_pooling_2d(h, 2)
+    def __call__(self, x):             # => 3   × 256
+        h = self.conv1(x)              # => 64  ×  128
+        h = F.max_pooling_2d(h, 3, 2)  # => 64  ×  64
 
-        h = self.block1_1(h, 0.2)
-        h = self.block1_2(h, 0.2)
-        h = self.block1_3(h, 0.2)
+        n = 1 / 2 / 8
+        h = self.block1_1(h, 1*n)      # => 64  ×  64
+        h = self.block1_2(h, 2*n)      # => 64  ×  64
 
-        h = self.block2_1(h, 0.3)
-        h = self.block2_2(h, 0.3)
-        h = self.block2_3(h, 0.3)
+        h = self.block2_1(h, 3*n)      # => 128 ×  32
+        h = self.block2_2(h, 4*n)      # => 128 ×  32
 
-        h = self.block3_1(h, 0.4)
-        h = self.block3_2(h, 0.4)
-        h = self.block3_3(h, 0.4)
+        h = self.block3_1(h, 5*n)      # => 256 ×   16
+        h = self.block3_2(h, 6*n)      # => 256 ×   16
 
-        h = self.block4_1(h, 0.5)
-        h = self.block4_2(h, 0.5)
-        h = self.block4_3(h, 0.5)
+        h = self.block4_1(h, 7*n)      # => 512 ×   8
+        h = self.block4_2(h, 8*n)      # => 512 ×   8
 
-        h = F.average_pooling_2d(h, 2)
-        h = self.l1(h)
+        h = F.average_pooling_2d(h, h.shape[2])  # global average pooling
+
+        # h = self.l1(h)
         return F.tanh(self.l2(h))
 
     def loss_func(self, x, t):
@@ -124,11 +125,134 @@ class ResNet(chainer.Chain):
         f1 = np.average(2 * TP / (2 * TP + FP + FN))
         return accuracy, accuracy2, acc_66, f1, frequent_error
 
-
-class Block2(chainer.Chain):
+class Bottle_neck_block(chainer.Chain):
     def __init__(self, out_channels, ksize, in_channels=None, init_stride=None, stride=1, pad=1):
         initializer = chainer.initializers.HeNormal()
-        super(Block2, self).__init__()
+        middle_channels = 64
+        super(Bottle_neck_block, self).__init__()
+        with self.init_scope():
+            # pre-activation & 参考: https://arxiv.org/pdf/1610.02915.pdf
+            self.bn1 = L.BatchNormalization(in_channels or out_channels)
+            self.conv1 = L.Convolution2D(None, middle_channels, 1, initialW=initializer)
+            self.bn2 = L.BatchNormalization(middle_channels)
+            self.conv2 = L.Convolution2D(None, middle_channels, ksize, init_stride or stride, pad, initialW=initializer)
+            self.bn3 = L.BatchNormalization(middle_channels)
+            self.conv3 = L.Convolution2D(None, out_channels, 1, initialW=initializer)
+            self.bn4 = L.BatchNormalization(out_channels)
+
+            self.xconv = L.Convolution2D(None, out_channels, 1, stride=2, initialW=initializer)
+
+    def __call__(self, x, ratio):
+        h = self.bn1(x)
+        h = self.conv1(h)
+        h = F.relu(self.bn2(h))
+        h = self.conv2(h)
+        h = F.relu(self.bn3(h))
+        h = F.dropout(h, ratio)  # Stochastic Depth
+        h = self.conv3(h)
+        h = self.bn4(h)  # 必要?
+
+        if x.shape[2:] != h.shape[2:]:  # skipではないほうのデータの縦×横がこのblock中で小さくなっていた場合skipの方もそれに合わせて小さくする
+            #x = F.average_pooling_2d(x, 1, 2)  # これでいいのか？
+            x = self.xconv(x)
+        if x.shape[1] != h.shape[1]:  # skipではない方のデータのチャンネル数がこのblock内で増えている場合skipの方もそれに合わせて増やす(zero-padding)
+            xp = chainer.cuda.get_array_module(x.data)  # gupが使える場合も想定
+            p = chainer.Variable(xp.zeros((x.shape[0], h.shape[1] - x.shape[1], *x.shape[2:]), dtype=xp.float32))
+            x = F.concat((x, p))
+        return (x + h) * (1 - ratio) # ?
+
+
+class Bottle_neck_RES_net(ResNet):  # 18-layer
+    def __init__(self, n_out, lossfunc=0):
+        self.lossfunc = lossfunc
+        initializer = chainer.initializers.HeNormal()
+        super(ResNet, self).__init__()
+        with self.init_scope():
+            self.conv1 = L.Convolution2D(None, 64, 7, stride=2, pad=3)
+
+            # Wide Residual Network
+            self.block1_1 = Bottle_neck_block(64, 3, pad=1)
+            self.block1_2 = Bottle_neck_block(64, 3, pad=1)
+
+            self.block2_1 = Bottle_neck_block(128, 3, 64, init_stride=2, pad=1)
+            self.block2_2 = Bottle_neck_block(128, 3, pad=1)
+
+            self.block3_1 = Bottle_neck_block(256, 3, 128, init_stride=2, pad=1)
+            self.block3_2 = Bottle_neck_block(256, 3, pad=1)
+
+            self.block4_1 = Bottle_neck_block(512, 3, 256, init_stride=2, pad=1)
+            self.block4_2 = Bottle_neck_block(512, 3, pad=1)
+
+            #self.l1 = L.Linear(1000, initialW=initializer)
+            self.l2 = L.Linear(n_out, initialW=initializer)
+
+
+class ResNet_lite(ResNet):  # 14?-layer
+    def __init__(self, n_out, lossfunc=0):
+        self.lossfunc = lossfunc
+        initializer = chainer.initializers.HeNormal()
+        super(ResNet, self).__init__()
+        with self.init_scope():
+            self.conv1 = L.Convolution2D(None, 64, 7, stride=2, pad=3)
+
+            # Wide Residual Network
+            self.block1_1 = Res_block(64, 3, pad=1)
+            self.block1_2 = Res_block(64, 3, pad=1)
+
+            self.block2_1 = Res_block(128, 3, 64, init_stride=2, pad=1)
+            self.block2_2 = Res_block(128, 3, pad=1)
+
+            self.block3_1 = Res_block(256, 3, 128, init_stride=2, pad=1)
+            self.block3_2 = Res_block(256, 3, pad=1)
+
+            #self.l1 = L.Linear(1000, initialW=initializer)
+            self.l2 = L.Linear(n_out, initialW=initializer)
+
+    def __call__(self, x):             # => 3   × 128
+        h = self.conv1(x)              # => 64  ×  64
+        h = F.max_pooling_2d(h, 3, 2)  # => 64  ×  32
+
+        n = 1 / 2 / 6
+        h = self.block1_1(h, 1*n)      # => 64  ×  32
+        h = self.block1_2(h, 2*n)      # => 64  ×  32
+
+        h = self.block2_1(h, 3*n)      # => 128 ×  16
+        h = self.block2_2(h, 4*n)      # => 128 ×  16
+
+        h = self.block3_1(h, 5*n)      # => 256 ×   8
+        h = self.block3_2(h, 6*n)      # => 256 ×   8
+
+        h = F.average_pooling_2d(h, h.shape[2])  # global average pooling
+
+        # h = self.l1(h)
+        return F.tanh(self.l2(h))
+
+
+class Bottle_neck_RES_net_lite(ResNet_lite):  # 18-layer
+    def __init__(self, n_out, lossfunc=0):
+        self.lossfunc = lossfunc
+        initializer = chainer.initializers.HeNormal()
+        super(ResNet, self).__init__()
+        with self.init_scope():
+            self.conv1 = L.Convolution2D(None, 64, 7, stride=2, pad=3)
+
+            # Wide Residual Network
+            self.block1_1 = Bottle_neck_block(64, 3, pad=1)
+            self.block1_2 = Bottle_neck_block(64, 3, pad=1)
+
+            self.block2_1 = Bottle_neck_block(128, 3, 64, init_stride=2, pad=1)
+            self.block2_2 = Bottle_neck_block(128, 3, pad=1)
+
+            self.block3_1 = Bottle_neck_block(256, 3, 128, init_stride=2, pad=1)
+            self.block3_2 = Bottle_neck_block(256, 3, pad=1)
+
+            #self.l1 = L.Linear(1000, initialW=initializer)
+            self.l2 = L.Linear(n_out, initialW=initializer)
+
+class RES_SPP_block(chainer.Chain):
+    def __init__(self, out_channels, ksize, in_channels=None, init_stride=None, stride=1, pad=1):
+        initializer = chainer.initializers.HeNormal()
+        super(RES_SPP_block, self).__init__()
         with self.init_scope():
             self.bn1 = L.BatchNormalization(in_channels or out_channels)
             self.conv1 = L.Convolution2D(None, out_channels, ksize, init_stride or stride, pad, initialW=initializer)
@@ -160,17 +284,17 @@ class RES_SPP_net(ResNet):
         with self.init_scope():
             self.conv1 = L.Convolution2D(None, 64, 7, pad=2)
 
-            self.block1_1 = Block2(64, 3, init_stride=2, pad=1)
-            self.block1_2 = Block2(64, 3, pad=1)
-            self.block1_3 = Block2(64, 3, pad=1)
+            self.block1_1 = RES_SPP_block(64, 3, init_stride=2, pad=1)
+            self.block1_2 = RES_SPP_block(64, 3, pad=1)
+            self.block1_3 = RES_SPP_block(64, 3, pad=1)
 
-            self.block2_1 = Block2(128, 3, 64, init_stride=2, pad=1)
-            self.block2_2 = Block2(128, 3, pad=1)
-            self.block2_3 = Block2(128, 3, pad=1)
+            self.block2_1 = RES_SPP_block(128, 3, 64, init_stride=2, pad=1)
+            self.block2_2 = RES_SPP_block(128, 3, pad=1)
+            self.block2_3 = RES_SPP_block(128, 3, pad=1)
 
-            self.block3_1 = Block2(256, 3, 128, init_stride=2, pad=1)
-            self.block3_2 = Block2(256, 3, pad=1)
-            self.block3_3 = Block2(256, 3, pad=1)
+            self.block3_1 = RES_SPP_block(256, 3, 128, init_stride=2, pad=1)
+            self.block3_2 = RES_SPP_block(256, 3, pad=1)
+            self.block3_3 = RES_SPP_block(256, 3, pad=1)
 
             self.l1 = L.Linear(2048, initialW=initializer)
             self.l2 = L.Linear(n_out, initialW=initializer)
@@ -191,7 +315,7 @@ class RES_SPP_net(ResNet):
         h = self.block3_2(h, 0.4)
         h = self.block3_3(h, 0.4)
         # h = F.spatial_pyramid_pooling_2d(h, 3, F.average_pooling_2d)
-        h = F.spatial_pyramid_pooling_2d(h, 3, F.MaxPooling2D)
+        h = F.spatial_pyramid_pooling_2d(h, 4, F.MaxPooling2D)
         h = self.l1(h)
         return F.tanh(self.l2(h))
 
@@ -200,13 +324,13 @@ import matplotlib as mpl
 import os
 
 
-class Block3(chainer.Chain):
+class Myblock(chainer.Chain):
     """
     畳み込み層
     """
     def __init__(self, out_channels, ksize, stride=1, pad=0):
         initializer = chainer.initializers.HeNormal()
-        super(Block3, self).__init__()
+        super(Myblock, self).__init__()
         with self.init_scope():
             self.conv = L.Convolution2D(None, out_channels, ksize, stride, pad, initialW=initializer)
             self.bn = L.BatchNormalization(out_channels)
@@ -231,12 +355,12 @@ class Mymodel(ResNet):
             # self.block4 = Block(256, 3, pad=1)
             # self.block5 = Block(128, 3, pad=1)
 
-            self.block1 = Block3(32, 3)  # n_in = args.size (300)^2 * 3 = 270000
-            self.block2 = Block3(64, 2)
-            self.block3 = Block3(128, 2)
-            self.block4 = Block3(256, 2)
-            self.block5 = Block3(256, 2)
-            self.block6 = Block3(128, 2)
+            self.block1 = Myblock(32, 3)  # n_in = args.size (300)^2 * 3 = 270000
+            self.block2 = Myblock(64, 2)
+            self.block3 = Myblock(128, 2)
+            self.block4 = Myblock(256, 2)
+            self.block5 = Myblock(256, 2)
+            self.block6 = Myblock(128, 2)
 
             self.fc1 = L.Linear(512, initialW=initializer)
             self.fc2 = L.Linear(512, initialW=initializer)
