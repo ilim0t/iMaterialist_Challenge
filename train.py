@@ -5,7 +5,6 @@
 import warnings
 
 warnings.filterwarnings('ignore', category=FutureWarning, message="Conversion of the second")
-warnings.filterwarnings('ignore', category=RuntimeWarning, message="overflow encountered in exp")
 warnings.filterwarnings('ignore', category=RuntimeWarning, message="invalid value encountered in sqrt")
 warnings.filterwarnings('ignore', category=RuntimeWarning, message="More than 20 figures have been opened.")
 
@@ -141,21 +140,11 @@ class Transform(object):
     def crop(self, img):  # 切り抜き, サイズ合わせ
         if img.shape[0] <= self.size or img.shape[1] <= self.size:
             # 少なくとも片辺の長さがが規定以下のとき
-            # アス比が2:1以上ならばちぎって横に並べて(文字の折返しみたいに)長方形にした後長辺が最大になるように拡大しあまりを白で埋める
+            # アス比が4:1以上ならばちぎって横に並べて(文字の折返しみたいに)長方形にした後長辺が最大になるように拡大しあまりを白で埋める
             # アス比がそれ以下ならそのまま長辺が最大になるように拡大しあまりを白で埋める
             ratio = max(img.shape[:2]) / min(img.shape[:2])
             if ratio >= 4:
-                n = int(ratio / 2)  # 分割数
-                # サイズが分割数で割り切れないとエラーが出るため揃える
-                size = int(np.max(img.shape[:2]) / n) * n
-                start = int((np.max(img.shape[:2]) - size) / 2)
-                if np.argmax(img.shape[:2]) == 0:
-                    img = img[start:start + size, :, :]
-                else:
-                    img = img[:, start:start + size, :]
-                # 分割してずらし結合
-                imgs = np.split(img, n, axis=np.argmax(img.shape[:2]))
-                img = np.concatenate(imgs, axis=np.argmin(img.shape[:2]))
+                img = self.divide(img, int(ratio / 2))
             img = self.assign(img)
         else:
             # 両辺ともに既定値以上ならば短辺×0.8以上の枠でランダムに切り出す
@@ -167,7 +156,22 @@ class Transform(object):
             img = imresize(img, [self.size] * 2)
         return img
 
-    def assign(self, img):
+    def divide(self, img, n):  # ちぎって横に並べて(文字の折返しみたいに)長方形にする
+        # n: n海分割する
+
+        # サイズが分割数で割り切れないとエラーが出るため揃える
+        size = int(np.max(img.shape[:2]) / n) * n
+        start = int((np.max(img.shape[:2]) - size) / 2)
+        if np.argmax(img.shape[:2]) == 0:
+            img = img[start:start + size, :, :]
+        else:
+            img = img[:, start:start + size, :]
+        # 分割してずらし結合
+        imgs = np.split(img, n, axis=np.argmax(img.shape[:2]))
+        img = np.concatenate(imgs, axis=np.argmin(img.shape[:2]))
+        return img
+
+    def assign(self, img):  # 長辺が最大になるように拡大しあまりを白で埋める
 
         # 長辺を最大化するようにリサイズ
         if np.argmax(img.shape[:2]) == 0:
@@ -178,14 +182,14 @@ class Transform(object):
 
         # 短辺の両端を白く穴埋めして規定値に揃える
         if img.shape[0] != self.size:
-            harf = int((self.size - img.shape[0]) / 2)
-            imgs = [np.full((harf, img.shape[1], 3), 255), img,
-                    np.full((self.size - img.shape[0] - harf, img.shape[1], 3), 255)]
+            start = int((self.size - img.shape[0]) / 2)
+            imgs = [np.full((start, img.shape[1], 3), 255), img,
+                    np.full((self.size - img.shape[0] - start, img.shape[1], 3), 255)]
             img = np.concatenate(imgs, axis=0)
         if img.shape[1] != self.size:
-            harf = int((self.size - img.shape[1]) / 2)
-            imgs = [np.full((self.size, harf, 3), 255), img,
-                    np.full((self.size, self.size - img.shape[1] - harf, 3), 255)]
+            start = int((self.size - img.shape[1]) / 2)
+            imgs = [np.full((self.size, start, 3), 255), img,
+                    np.full((self.size, self.size - img.shape[1] - start, 3), 255)]
             img = np.concatenate(imgs, axis=1)
         return img
 
@@ -243,7 +247,7 @@ def main():
     parser.add_argument('--object', type=str, default='train',
                         help='train or test のどちらか選んだ方のデータを使用する'),
     parser.add_argument('--cleanup', '-c', dest='cleanup', action='store_true',
-                        help='邪魔な画像を取り除く'),
+                        help='付与すると 邪魔な画像を取り除き trashディレクトリに移動させる'),
     parser.add_argument('--interval', '-i', type=int, default=10,
                         help='何iteraionごとに画面に出力するか')
     parser.add_argument('--model', '-m', type=int, default=0,
