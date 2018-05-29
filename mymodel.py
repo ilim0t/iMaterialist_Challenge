@@ -89,13 +89,15 @@ class ResNet(chainer.Chain):  # 18-layer
     def loss_func(self, x, t):
         y = self.__call__(x)
         loss = 0
-        if self.lossfunc == 1 or self.lossfunc == 2:
+        if self.lossfunc == 1:
             TP = F.sum((y + 1) * 0.5 * t, axis=1)
             FP = F.sum((y + 1) * 0.5 * (1 - t), axis=1)
             FN = F.sum((1 - y) * 0.5 * t, axis=1)
+            # precision = TP / (TP + FP)
+            # recall = TP / (TP + FN)
             loss += 1 - F.average(2 * TP / (2 * TP + FP + FN))  # F1 scoreを元に
 
-        if self.lossfunc == 0 or self.lossfunc == 2:
+        if self.lossfunc == 2:
             t_card = F.sum(t.astype("f"), axis=1)
             loss += F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) /
                               (t_card * (t.shape[1] - t_card)))  # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
@@ -110,16 +112,61 @@ class ResNet(chainer.Chain):  # 18-layer
             =(exp(-x) dot [1 if x∈Y else 0]) * (exp(x)行列 dot [0 if x∈Y else 1])
             =F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1)
             
+            ( TP  + FN ) * ( TN  + FP )
+            (e^-1 + e^1) * (e^-1 + e^1)
+            
             ∴loss = loss += F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) / (t_card * (t.shape[1] - t_card)))
             """
+        if self.lossfunc == 0:
+            if not hasattr(self, 'fnk'):
+                self.n = 0
+                self.fnk = 3
+                self.fpk = 15
+                self.tpk = 3
+                self.fnv = 0
+                self.fpv = 0
+                self.tpv = 0
+                self.fnloss = [0, 0]
+                self.fploss = [0, 0]
+                self.tploss = [0, 0]
+
+            self.n += 1
+            tpk = - np.log(self.tpk)
+            fnk = np.log(self.fnk)
+            tnk = - 1
+            fpk = np.log(self.fpk)  # np.log(20 - 20 * self.a/100 + np.e)  # 5.836
+            t_card = F.sum(t.astype("f"), axis=1)
+            loss += F.average(
+                F.sum(t * F.exp((y*(tpk - fnk) + tpk + fnk) / 2), axis=1) *
+                F.sum((1 - t) * F.exp((y*(fpk - tnk) + fpk + tnk) / 2), axis=1)
+                / (t_card * (t.shape[1] - t_card)))  # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形 & FPに対し重み付け
 
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y.data, t)
         chainer.reporter.report({'acc': accuracy[0]}, self)  # dataひとつひとつのlabelが完全一致している確率
         chainer.reporter.report({'acc2': accuracy[1]}, self)  # すべてのbatchを通してlabelそれぞれの正解確率の平均
         # chainer.reporter.report({'acc_66': accuracy[2]}, self)  # 66番ラベルの正解率
+        chainer.reporter.report({'precision': accuracy[5]}, self)
+        chainer.reporter.report({'recall': accuracy[6]}, self)
         chainer.reporter.report({'f1': accuracy[3]}, self)
         # chainer.reporter.report({'freq_err': accuracy[4]}, self)  # batchの中で最も多く間違って判断したlabel
+
+        if self.lossfunc == 0 and self.n > 50:
+            self.tpk = self.tpk + self.tpv
+            self.tpv = 0.8 * self.tpv - 0.002 * (self.tploss[0] - (self.tploss[1] - (1/(1/accuracy[5] + 1/accuracy[6]) - 1))) * (1/accuracy[7] + 1/accuracy[8])
+            self.tploss[0] = self.tploss[1] - (1/(1/accuracy[5] + 1/accuracy[6]) - 1)
+            self.tploss[1] = 1/(1/accuracy[5] + 1/accuracy[6]) - 1
+
+            self.fnk = self.fnk + self.fnv
+            self.fnv = 0.8 * self.fnv - 0.002 * (self.fnloss[0] - (self.fnloss[1] - (accuracy[6] - 1))) / accuracy[8]
+            self.fnloss[0] = self.fnloss[1] - (accuracy[6] - 1)
+            self.fnloss[1] = accuracy[6] - 1
+
+            self.fpk = self.fpk + self.fpv
+            self.fpv = 0.8 * self.fpv - 0.002 * (self.fploss[0] - (self.fploss[1] - (accuracy[5] - 1))) / accuracy[7]
+            self.fploss[0] = self.fploss[1] - (accuracy[7] - 1)
+            self.fploss[1] = accuracy[7] - 1
+            print(self.tpk, self.fnk, self.fpk)
         return loss
 
     def accuracy(self, y, t):
@@ -136,12 +183,12 @@ class ResNet(chainer.Chain):  # 18-layer
         FP = np.sum(y_binary * (1 - t), axis=1)
         FN = np.sum((1 - y_binary) * t, axis=1)
         f1 = np.average(2 * TP / (2 * TP + FP + FN))
-        return accuracy, accuracy2, acc_66, f1, frequent_error
+        return accuracy, accuracy2, acc_66, f1, frequent_error, np.average(TP/(TP+FP)), np.average(TP/(TP+FN)), np.var(TP/(TP+FP)), np.var(TP/(TP+FN))
 
 class Bottle_neck_block(chainer.Chain):
     def __init__(self, out_channels, ksize, in_channels=None, init_stride=None, stride=1, pad=1):
         initializer = chainer.initializers.HeNormal()
-        middle_channels = out_channels / 2
+        middle_channels = int(out_channels / 2)
         super(Bottle_neck_block, self).__init__()
         with self.init_scope():
             # pre-activation & 参考: https://arxiv.org/pdf/1610.02915.pdf

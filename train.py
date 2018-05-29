@@ -45,6 +45,11 @@ import urllib3
 warnings.filterwarnings('ignore', category=urllib3.exceptions.InsecureRequestWarning,
                         message="Unverified HTTPS request is being made.")
 
+# サーバで動かすときに必要なパッケージ
+# pillow
+# scipy
+# scipy
+
 
 class MyEvaluator(extensions.Evaluator):
     """
@@ -167,7 +172,7 @@ class Transform(object):
     def horizontal_flip(self, img):  # 左右反転
         return img[:, ::-1, :]
 
-    def rotation(self, img):  # 回転
+    def rotation(self, img):  # 回転, 処理が重い(RES_netにて処理時間全体の3%)
         angle = np.random.randint(-10, 10)
         img = rotate(img, angle, cval=255)
         if self.isResize:
@@ -188,7 +193,7 @@ class Transform(object):
         ratio = max(img.shape[:2]) / min(img.shape[:2])
         if ratio >= 4 or img.shape[0] <= self.size or img.shape[1] <= self.size:
             # 少なくとも片辺の長さがが規定以下のとき
-            # アス比が4:1以上ならばちぎって横に並べて(文字の折返しみたいに)長方形にした後長辺が最大になるように拡大しあまりを白で埋める
+            # アス比が4:1以上ならばちぎって横に並べて(文字の折返しみたいに)長方形にした後長辺が最大になるようにトリミングしあまりを白で埋める
             # アス比がそれ以下ならそのまま長辺が最大になるように拡大しあまりを白で埋める
             if ratio >= 4:
                 img = self.divide(img, int(ratio / 2))
@@ -320,10 +325,13 @@ def main():
     parser.add_argument('--lossfunc', '-l', type=int, default=0,
                         help='使うlossの種類'),
     parser.add_argument('--stream', '-d', dest='stream', action='store_true',
-                        help='画像のダウンロードを同時に行う')
+                        help='画像のダウンロードを同時に行う'),
+    parser.add_argument('--parallel', '-p', dest='douji', action='store_true',
+                        help='画像ダウンロードを並列処理するか')
     args = parser.parse_args()
 
     # args.model = -1
+
     # liteがついているのはsizeをデフォルトの半分にするの前提で作っています
     # RES_SPP_netはchainerで可変量サイズの入力を実装するのが難しかったので頓挫
     model = ['ResNet', 'ResNet_lite', 'Bottle_neck_RES_net', 'Bottle_neck_RES_net_lite',
@@ -415,8 +423,8 @@ def main():
 
     # 各データでの評価の表示(欄に関する)設定
     trainer.extend(extensions.PrintReport(
-        ['epoch', 'iteration', 'main/loss', 'val/loss',
-         'main/acc', 'val/acc', 'main/acc2', 'val/acc2','main/f1', 'val/f1', 'elapsed_time']))
+        ['epoch', 'iteration', 'main/loss', 'val/loss','main/acc', 'val/acc', 'main/acc2', 'val/acc2',
+         'main/precision', 'main/recall', 'main/f1', 'val/f1', 'elapsed_time']))
 
     # プログレスバー表示の設定
     trainer.extend(extensions.ProgressBar(update_interval=args.interval))
@@ -426,7 +434,7 @@ def main():
         chainer.serializers.load_npz(args.resume, model, path='updater/model:main/')  # なぜかpathを外すと読み込めなくなってしまった 原因不明
 
     # 学習の実行
-    if args.stream:
+    if args.stream and args.parallel:
         import concurrent.futures
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         executor.submit(trainer.run)
@@ -434,12 +442,12 @@ def main():
         def train_download():
             for num in [train_iter.dataset._dataset[i] for i in train_iter._order]:
                 trans.download(-num)
-                time.sleep(0.02)
+                time.sleep(0.01)
 
         def val_download():
             for num in train_iter.dataset._dataset[train_iter.dataset._start:]:
                 trans.download(-num)
-                time.sleep(0.02)
+                time.sleep(0.01)
         executor.submit(train_download)
         executor.submit(val_download)
     else:

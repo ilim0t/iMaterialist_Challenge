@@ -48,7 +48,7 @@ def main():
     parser.add_argument('--resume', '-r', default='',
                         help='指定したsnapshopから継続して学習します')
     parser.add_argument('--frequency', '-f', type=int, default=1,
-                        help='Frequency of taking a snapshot')
+                        help='指定したepotchごとに重みを保存します')
     parser.add_argument('--gpu', '-g', type=int, default=-1,
                         help='使うGPUの番号')
     parser.add_argument('--size', '-s', type=int, default=256,
@@ -59,24 +59,30 @@ def main():
                         help='使用する写真データの数'),  # (9815, 39269)
     parser.add_argument('--object', type=str, default='test',
                         help='train or test のどちらか選んだ方のデータを使用する'),
-    parser.add_argument('--cleanup', '-c', dest='cleanup', action='store_true',
-                        help='邪魔な画像を取り除く'),
+    parser.add_argument('--cleanup', '-c', dest='cleanup', action='store_false',
+                        help='付与すると 邪魔な画像を取り除き trashディレクトリに移動させる機能を停止させます'),
     parser.add_argument('--interval', '-i', type=int, default=10,
-                        help='何iteraionごとに画面に出力するか'),
+                        help='何iteraionごとに画面に出力するか')
     parser.add_argument('--model', '-m', type=int, default=0,
-                        help='使うモデルの種類'),
+                        help='使うモデルの種類')
     parser.add_argument('--lossfunc', '-l', type=int, default=0,
-                        help='使うlossの種類')
+                        help='使うlossの種類'),
+    parser.add_argument('--stream', '-d', dest='stream', action='store_true',
+                        help='画像のダウンロードを同時に行う'),
+    parser.add_argument('--parallel', '-p', dest='douji', action='store_true',
+                        help='画像ダウンロードを並列処理するか')
     args = parser.parse_args()
 
     # liteがついているのはsizeをデフォルトの半分にするの前提で作っています
+    # RES_SPP_netはchainerで可変量サイズの入力を実装するのが難しかったので頓挫
     model = ['ResNet', 'ResNet_lite', 'Bottle_neck_RES_net', 'Bottle_neck_RES_net_lite',
-             'Mymodel', 'RES_SPP_net', 'Lite'][args.model]  # RES_SPP_netはchainerで可変量サイズの入力を実装するのが難しかったので頓挫
+             'Mymodel', 'RES_SPP_net', 'Lite'][args.model]
 
     print('GPU: {}'.format(args.gpu))
     print('# Minibatch-size: {}'.format(args.batchsize))
     print('# epoch: {}'.format(args.epoch))
     print('# model: {}'.format(model))
+    print('# size: {}'.format(args.size))
     print('')
 
     model = getattr(mymodel, model)(args.label_variety, args.lossfunc)
@@ -87,7 +93,8 @@ def main():
         model.to_gpu()
 
     photo_nums = train.photos(args)
-    test = chainer.datasets.TransformDataset(photo_nums, train.Transform(args, photo_nums, False, False if args.model == 5 else True))
+    test = chainer.datasets.TransformDataset(
+        photo_nums, train.Transform(args, photo_nums, False, False if args.model == 5 else True))
     test_iter = chainer.iterators.SerialIterator(test, args.batchsize,
                                                  repeat=False, shuffle=False)
 
@@ -114,7 +121,7 @@ def main():
         pbar.close()
 
         df = pd.DataFrame(list0, columns=['image_id', 'label_id'])
-        df.to_csv("result.csv", index=False)
+        df.to_csv("result/result.csv", index=False)
 
 
 if __name__ == '__main__':
