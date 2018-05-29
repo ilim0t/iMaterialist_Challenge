@@ -99,6 +99,7 @@ class Transform(object):
         self.isTrain = isTrain
         self.isResize = isResize
         self.stream = args.stream
+        self.cleanup = args.cleanup
 
         if not os.path.exists(self.data_folder):
             os.makedirs(self.data_folder)
@@ -157,7 +158,7 @@ class Transform(object):
                     self.randnums[0] = -1
                     break
             img = photo_downloader(self.data_folder + str(casetdnum + 1) + '.jpg', self.url[casetdnum])
-            trash = cleanup(self.data_folder, casetdnum + 1)
+            trash = not self.cleanup or cleanup(self.data_folder, casetdnum + 1)
             del self.randnums[0]
             if not trash:
                 self.cast[num] = casetdnum + 1
@@ -310,8 +311,8 @@ def main():
                         help='使用する写真データの数'),  # (9815, 39269)
     parser.add_argument('--object', type=str, default='train',
                         help='train or test のどちらか選んだ方のデータを使用する'),
-    parser.add_argument('--cleanup', '-c', dest='cleanup', action='store_true',
-                        help='付与すると 邪魔な画像を取り除き trashディレクトリに移動させる'),
+    parser.add_argument('--cleanup', '-c', dest='cleanup', action='store_false',
+                        help='付与すると 邪魔な画像を取り除き trashディレクトリに移動させる機能を停止させます'),
     parser.add_argument('--interval', '-i', type=int, default=10,
                         help='何iteraionごとに画面に出力するか')
     parser.add_argument('--model', '-m', type=int, default=0,
