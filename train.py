@@ -8,6 +8,7 @@ warnings.filterwarnings('ignore', category=FutureWarning, message="Conversion of
 warnings.filterwarnings('ignore', category=RuntimeWarning, message="invalid value encountered in sqrt")
 warnings.filterwarnings('ignore', category=RuntimeWarning, message="More than 20 figures have been opened.")
 
+
 import chainer
 import chainer.functions as F
 import chainer.links as L
@@ -36,6 +37,12 @@ from scipy.misc import imresize
 import shutil
 import copy
 import six
+
+import io
+import urllib3
+
+warnings.filterwarnings('ignore', category=urllib3.exceptions.InsecureRequestWarning,
+                        message="Unverified HTTPS request is being made.")
 
 
 class MyEvaluator(extensions.Evaluator):
@@ -90,16 +97,29 @@ class Transform(object):
         self.data_folder = 'data/' + args.object + '_images/'
         self.isTrain = isTrain
         self.isResize = isResize
+        self.stream = args.stream
+
+        if not os.path.exists(self.data_folder):
+            os.makedirs(self.data_folder)
 
         if isTrain:
             with open('input/train.json', 'r') as f:  # 教師データの読み込み
                 self.json_data = [[int(j) for j in i["labelId"]] for i in
                                   json.load(f)["annotations"][:photo_nums[-1 if args.total_photo_num == -1 else
                                   args.total_photo_num - 1]]]
+        if self.stream:
+            with open('input/train.json', 'r') as f:  # 教師データの読み込み
+                self.url = [i["url"] for i in json.load(f)["images"]]
+            self.randnums = list(range(1, 1014544 + 1))
+            np.random.shuffle(self.randnums)
+            self.cast = {}
 
     def __call__(self, num):
+        if num < 0 and self.stream:
+            img_data = self.download(num)
         # 写真を読み込み配列に
-        img_data = Image.open(self.data_folder + str(num) + '.jpg')
+        else:
+            img_data = Image.open(self.data_folder + str(num) + '.jpg')
         array_img = np.asarray(img_data)
 
         # 各種 augmentation
@@ -122,6 +142,17 @@ class Transform(object):
         # 例: 1, 2, 10 のラベルがついている場合
         # [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, ...]
         return array_img, label
+
+    def download(self, num):
+        num = -num
+        if num in self.cast.keys():
+            return Image.open(self.data_folder + str(self.cast[num]) + '.jpg')
+        while 1:
+            casetdnum = self.randnums.pop(0)
+            self.cast[num] = casetdnum
+            img = photo_downloader(self.data_folder, self.data_folder + str(casetdnum) + '.jpg', self.url[casetdnum - 1])
+            if not cleanup(self.data_folder, casetdnum):
+                return img
 
     def horizontal_flip(self, img):  # 左右反転
         return img[:, ::-1, :]
@@ -200,9 +231,23 @@ class Transform(object):
         return img
 
 
+def photo_downloader(fname, url):
+    if not os.path.exists(fname):
+        http = urllib3.PoolManager(retries=urllib3.util.Retry(connect=3, read=2, redirect=3))
+        response = http.request("GET", url)
+        image = Image.open(io.BytesIO(response.data))
+        image_rgb = image.convert("RGB")
+        image_rgb.save(fname, format='JPEG', quality=90)
+        return image
+    else:
+        return Image.open(fname)
+
+
 def photos(args):
     # 存在するファイルから写真のみ列挙して返す
     data_folder = 'data/' + args.object + '_images/'
+    if args.stream:
+        return range(-1, (-int(1014544 * 0.9) - 1) if args.total_photo_num == -1 else (-args.total_photo_num - 1), -1)
     photo_nums = os.listdir(data_folder)
 
     # for i in ['.gitkeep', '.DS_Store', 'trash']:  # 画像ではないファイル,ディレクトリを除外
@@ -215,12 +260,9 @@ def photos(args):
     if args.cleanup and args.object != 'test':  # 指定された場合 真っ白なファイルなどを除外する
         removed = []
         for i in photo_nums:
-            # 過去に見つかった除外対象写真と全く同じサイズのとき除外
-            # その代表photo_num: [4019, 16161, 35, 1485, 7742, 34262, 5098] 40000枚中これらのみ発見
-            if os.path.getsize(data_folder + str(i) + '.jpg') in [874, 1854, 2588, 5106, 11197, 12814, 6305]:
+            if cleanup(data_folder, i, photo_nums):
                 photo_nums.remove(i)
                 removed.append(i)
-                shutil.move(data_folder + str(i) + '.jpg', data_folder + 'trash/' + str(i) + '.jpg')
         # 見つかった除外対象写真一覧を保存
         with open('removed.txt', 'wb') as f:
             pickle.dump(removed, f)
@@ -228,6 +270,17 @@ def photos(args):
     if args.total_photo_num != -1:  # 上限が指定されている場合それに合わせる
         photo_nums = photo_nums[:args.total_photo_num]
     return photo_nums
+
+
+def cleanup(data_folder, photo_num):
+    # 過去に見つかった除外対象写真と全く同じサイズのとき除外
+    # その代表photo_num: [4019, 16161, 35, 1485, 7742, 34262, 5098] 40000枚中これらのみ発見
+    if os.path.getsize(data_folder + str(photo_num) + '.jpg') in [874, 1854, 2588, 5106, 11197, 12814, 6305]:
+        if not os.path.isdir(data_folder + 'trash/'):
+            os.mkdir(data_folder + 'trash/')
+        shutil.move(data_folder + str(photo_num) + '.jpg', data_folder + 'trash/' + str(photo_num) + '.jpg')
+        return True
+    return False
 
 def main():
     # 各種パラメータ設定
@@ -259,12 +312,15 @@ def main():
     parser.add_argument('--model', '-m', type=int, default=0,
                         help='使うモデルの種類')
     parser.add_argument('--lossfunc', '-l', type=int, default=0,
-                        help='使うlossの種類')
+                        help='使うlossの種類'),
+    parser.add_argument('--stream', '-d', dest='stream', action='store_true',
+                        help='画像のダウンロードを同時に行う')
     args = parser.parse_args()
 
     # liteがついているのはsizeをデフォルトの半分にするの前提で作っています
+    # RES_SPP_netはchainerで可変量サイズの入力を実装するのが難しかったので頓挫
     model = ['ResNet', 'ResNet_lite', 'Bottle_neck_RES_net', 'Bottle_neck_RES_net_lite',
-             'Mymodel', 'RES_SPP_net', 'Lite'][args.model]  # RES_SPP_netはchainerで可変量サイズの入力を実装するのが難しかったので頓挫
+             'Mymodel', 'RES_SPP_net', 'Lite'][args.model]
 
     print('GPU: {}'.format(args.gpu))
     print('# Minibatch-size: {}'.format(args.batchsize))
@@ -290,9 +346,10 @@ def main():
 
     # データセットのセットアップ
     photo_nums = photos(args)
-    train, val = chainer.datasets.split_dataset_random(photo_nums,
-                                                        int(len(photo_nums) * 0.8), seed=0)  # 2割をvalidation用にとっておく
-    train = chainer.datasets.TransformDataset(train, Transform(args, photo_nums, True, False if args.model == 5 else True))
+    train, val = chainer.datasets.split_dataset_random(
+        photo_nums, int(len(photo_nums) * 0.8), seed=0)  # 2割をvalidation用にとっておく
+    train = chainer.datasets.TransformDataset(
+        train, Transform(args, photo_nums, True, False if args.model == 5 else True))
     val = chainer.datasets.TransformDataset(val, Transform(args, photo_nums, True, False if args.model == 5 else True))
 
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)

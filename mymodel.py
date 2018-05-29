@@ -141,7 +141,7 @@ class ResNet(chainer.Chain):  # 18-layer
 class Bottle_neck_block(chainer.Chain):
     def __init__(self, out_channels, ksize, in_channels=None, init_stride=None, stride=1, pad=1):
         initializer = chainer.initializers.HeNormal()
-        middle_channels = 64
+        middle_channels = out_channels / 2
         super(Bottle_neck_block, self).__init__()
         with self.init_scope():
             # pre-activation & 参考: https://arxiv.org/pdf/1610.02915.pdf

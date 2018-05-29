@@ -36,3 +36,7 @@ old_result/*
 input/*
 .python-version
 progress
+testdata/*
+*result*
+logs/*
+__pycache__/*
