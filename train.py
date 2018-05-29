@@ -48,7 +48,6 @@ warnings.filterwarnings('ignore', category=urllib3.exceptions.InsecureRequestWar
 # サーバで動かすときに必要なパッケージ
 # pillow
 # scipy
-# scipy
 
 
 class MyEvaluator(extensions.Evaluator):
@@ -209,7 +208,7 @@ class Transform(object):
         return img
 
     def divide(self, img, n):  # ちぎって横に並べて(文字の折返しみたいに)長方形にする
-        # n: n海分割する
+        # n: n回分割する
 
         # サイズが分割数で割り切れないとエラーが出るため揃える
         size = int(np.max(img.shape[:2]) / n) * n
@@ -330,7 +329,6 @@ def main():
                         help='画像ダウンロードを並列処理するか')
     args = parser.parse_args()
 
-    # args.model = -1
 
     # liteがついているのはsizeをデフォルトの半分にするの前提で作っています
     # RES_SPP_netはchainerで可変量サイズの入力を実装するのが難しかったので頓挫
@@ -424,7 +422,7 @@ def main():
     # 各データでの評価の表示(欄に関する)設定
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'main/loss', 'val/loss','main/acc', 'val/acc', 'main/acc2', 'val/acc2',
-         'main/precision', 'main/recall', 'main/f1', 'val/f1', 'elapsed_time']))
+         'main/precision', 'main/recall', 'main/f1', 'val/f1', 'main/labelnum','elapsed_time']))
 
     # プログレスバー表示の設定
     trainer.extend(extensions.ProgressBar(update_interval=args.interval))

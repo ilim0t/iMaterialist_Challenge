@@ -33,7 +33,7 @@ class Res_block(chainer.Chain):
             #x = F.average_pooling_2d(x, 1, 2)  # これでいいのか？
             x = self.xconv(x)
         if x.shape[1] != h.shape[1]:  # skipではない方のデータのチャンネル数がこのblock内で増えている場合skipの方もそれに合わせて増やす(zero-padding)
-            xp = chainer.cuda.get_array_module(x.data)  # gupが使える場合も想定
+            xp = chainer.cuda.get_array_module(x.data)  # GPCが使える場合も想定
             p = chainer.Variable(xp.zeros((x.shape[0], h.shape[1] - x.shape[1], *x.shape[2:]), dtype=xp.float32))
             x = F.concat((x, p))
         return x + h
@@ -118,19 +118,11 @@ class ResNet(chainer.Chain):  # 18-layer
             ∴loss = loss += F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) / (t_card * (t.shape[1] - t_card)))
             """
         if self.lossfunc == 0:
-            if not hasattr(self, 'fnk'):
-                self.n = 0
-                self.fnk = 3
-                self.fpk = 15
-                self.tpk = 3
-                self.fnv = 0
-                self.fpv = 0
-                self.tpv = 0
-                self.fnloss = [0, 0]
-                self.fploss = [0, 0]
-                self.tploss = [0, 0]
-
-            self.n += 1
+            if not hasattr(self, 'n'):
+                self.n = None
+                self.fnk = np.e
+                self.fpk = np.e/(0.9 ** 14)
+                self.tpk = np.e
             tpk = - np.log(self.tpk)
             fnk = np.log(self.fnk)
             tnk = - 1
@@ -149,24 +141,22 @@ class ResNet(chainer.Chain):  # 18-layer
         chainer.reporter.report({'precision': accuracy[5]}, self)
         chainer.reporter.report({'recall': accuracy[6]}, self)
         chainer.reporter.report({'f1': accuracy[3]}, self)
+        chainer.reporter.report({'labelnum': accuracy[9]}, self)
         # chainer.reporter.report({'freq_err': accuracy[4]}, self)  # batchの中で最も多く間違って判断したlabel
 
-        if self.lossfunc == 0 and self.n > 50:
-            # momentum
-            self.tpk = self.tpk + self.tpv
-            self.tpv = 0.8 * self.tpv - 0.002 * (self.tploss[0] - (self.tploss[1] - (1/(1/accuracy[5] + 1/accuracy[6]) - 1))) * (1/accuracy[7] + 1/accuracy[8])
-            self.tploss[0] = self.tploss[1] - (1/(1/accuracy[5] + 1/accuracy[6]) - 1)
-            self.tploss[1] = 1/(1/accuracy[5] + 1/accuracy[6]) - 1
-
-            self.fnk = self.fnk + self.fnv
-            self.fnv = 0.8 * self.fnv - 0.002 * (self.fnloss[0] - (self.fnloss[1] - (accuracy[6] - 1))) / accuracy[8]
-            self.fnloss[0] = self.fnloss[1] - (accuracy[6] - 1)
-            self.fnloss[1] = accuracy[6] - 1
-
-            self.fpk = self.fpk + self.fpv
-            self.fpv = 0.8 * self.fpv - 0.002 * (self.fploss[0] - (self.fploss[1] - (accuracy[5] - 1))) / accuracy[7]
-            self.fploss[0] = self.fploss[1] - (accuracy[7] - 1)
-            self.fploss[1] = accuracy[7] - 1
+        siggma = 5.836
+        if self.n is None and accuracy[9].data <= 7:
+            self.n = 1
+        elif not (self.n is None) and accuracy[9].data <= siggma - siggma / np.log(1 + t.shape[0]):
+            self.n += 1
+            if self.n >= 10:
+                self.n = 0
+                self.fpk = min(self.fpk / 0.9, 40)
+        elif not (self.n is None) and accuracy[9].data >= siggma + siggma / np.log(1 + t.shape[0]):
+            self.n -= 1
+            if self.n <= -10:
+                self.n = 0
+                self.fpk = max(self.fpk * 0.9, 0.1)
         return loss
 
     def accuracy(self, y, t):
@@ -183,7 +173,9 @@ class ResNet(chainer.Chain):  # 18-layer
         FP = np.sum(y_binary * (1 - t), axis=1)
         FN = np.sum((1 - y_binary) * t, axis=1)
         f1 = np.average(2 * TP / (2 * TP + FP + FN))
-        return accuracy, accuracy2, acc_66, f1, frequent_error, np.average(TP/(TP+FP)), np.average(TP/(TP+FN)), np.var(TP/(TP+FP)), np.var(TP/(TP+FN))
+        return accuracy, accuracy2, acc_66, f1, frequent_error,\
+               np.average(TP/(TP+FP)), np.average(TP/(TP+FN)), np.var(TP/(TP+FP)), np.var(TP/(TP+FN)), \
+               F.average(F.sum(y_binary.astype(float), axis=1))
 
 class Bottle_neck_block(chainer.Chain):
     def __init__(self, out_channels, ksize, in_channels=None, init_stride=None, stride=1, pad=1):
@@ -216,7 +208,7 @@ class Bottle_neck_block(chainer.Chain):
             #x = F.average_pooling_2d(x, 1, 2)  # これでいいのか？
             x = self.xconv(x)
         if x.shape[1] != h.shape[1]:  # skipではない方のデータのチャンネル数がこのblock内で増えている場合skipの方もそれに合わせて増やす(zero-padding)
-            xp = chainer.cuda.get_array_module(x.data)  # gupが使える場合も想定
+            xp = chainer.cuda.get_array_module(x.data)  # GPUが使える場合も想定
             p = chainer.Variable(xp.zeros((x.shape[0], h.shape[1] - x.shape[1], *x.shape[2:]), dtype=xp.float32))
             x = F.concat((x, p))
         return x + h
@@ -329,7 +321,7 @@ class RES_SPP_block(chainer.Chain):
         if x.shape[2:] != h.shape[2:]:  # skipではないほうのデータの縦×横がこのblock中で小さくなっていた場合skipの方もそれに合わせて小さくする
             x = F.average_pooling_2d(x, 1, 2)
         if x.shape[1] != h.shape[1]:  # skipではない方のデータのチャンネル数がこのblock内で増えている場合skipの方もそれに合わせて増やす
-            xp = chainer.cuda.get_array_module(x.data)  # gupが使える場合も想定
+            xp = chainer.cuda.get_array_module(x.data)  # GPUが使える場合も想定
             p = chainer.Variable(xp.zeros((x.shape[0], h.shape[1] - x.shape[1], *x.shape[2:]), dtype=xp.float32))
             x = F.concat((x, p))
         return x + h
