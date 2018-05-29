@@ -25,6 +25,7 @@ import json
 from PIL import Image
 import matplotlib as mpl
 import platform
+import time
 
 # for rendering graph on remote server.
 if platform.system() != "Darwin":
@@ -94,7 +95,7 @@ class Transform(object):
     def __init__(self, args, photo_nums, isTrain=True, isResize=True):
         self.label_variety = args.label_variety
         self.size = args.size
-        self.data_folder = 'data/' + args.object + '_images/'
+        self.data_folder = 'testdata/' + args.object + '_images/'
         self.isTrain = isTrain
         self.isResize = isResize
         self.stream = args.stream
@@ -102,20 +103,23 @@ class Transform(object):
         if not os.path.exists(self.data_folder):
             os.makedirs(self.data_folder)
 
-        if isTrain:
+        if self.stream:
+            with open('input/train.json', 'r') as f:  # 教師データの読み込み
+                data = json.load(f)
+                self.url = [i["url"] for i in data["images"]]
+                self.json_data = [[int(j) for j in i["labelId"]] for i in data["annotations"]]
+            self.randnums = list(range(1014544 + 1))
+            np.random.shuffle(self.randnums)
+            self.cast = {}
+        elif isTrain:
             with open('input/train.json', 'r') as f:  # 教師データの読み込み
                 self.json_data = [[int(j) for j in i["labelId"]] for i in
                                   json.load(f)["annotations"][:photo_nums[-1 if args.total_photo_num == -1 else
                                   args.total_photo_num - 1]]]
-        if self.stream:
-            with open('input/train.json', 'r') as f:  # 教師データの読み込み
-                self.url = [i["url"] for i in json.load(f)["images"]]
-            self.randnums = list(range(1, 1014544 + 1))
-            np.random.shuffle(self.randnums)
-            self.cast = {}
 
     def __call__(self, num):
         if num < 0 and self.stream:
+            num = - num
             img_data = self.download(num)
         # 写真を読み込み配列に
         else:
@@ -144,14 +148,19 @@ class Transform(object):
         return array_img, label
 
     def download(self, num):
-        num = -num
         if num in self.cast.keys():
             return Image.open(self.data_folder + str(self.cast[num]) + '.jpg')
         while 1:
-            casetdnum = self.randnums.pop(0)
-            self.cast[num] = casetdnum
-            img = photo_downloader(self.data_folder, self.data_folder + str(casetdnum) + '.jpg', self.url[casetdnum - 1])
-            if not cleanup(self.data_folder, casetdnum):
+            while 1:  # 並列化のため複雑化
+                casetdnum = self.randnums[0]
+                if casetdnum != -1:
+                    self.randnums[0] = -1
+                    break
+            img = photo_downloader(self.data_folder + str(casetdnum + 1) + '.jpg', self.url[casetdnum])
+            trash = cleanup(self.data_folder, casetdnum + 1)
+            del self.randnums[0]
+            if not trash:
+                self.cast[num] = casetdnum + 1
                 return img
 
     def horizontal_flip(self, img):  # 左右反転
@@ -249,10 +258,6 @@ def photos(args):
     if args.stream:
         return range(-1, (-int(1014544 * 0.9) - 1) if args.total_photo_num == -1 else (-args.total_photo_num - 1), -1)
     photo_nums = os.listdir(data_folder)
-
-    # for i in ['.gitkeep', '.DS_Store', 'trash']:  # 画像ではないファイル,ディレクトリを除外
-    #     if i in photo_nums:
-    #         photo_nums.remove(i)
     photo_nums = [int(i.split('.')[0]) for i in photo_nums
                   if '.' in i and i.split('.')[1] == 'jpg' and i.split('.')[0][0] != '.']
     photo_nums.sort()
@@ -317,6 +322,7 @@ def main():
                         help='画像のダウンロードを同時に行う')
     args = parser.parse_args()
 
+    # args.model = -1
     # liteがついているのはsizeをデフォルトの半分にするの前提で作っています
     # RES_SPP_netはchainerで可変量サイズの入力を実装するのが難しかったので頓挫
     model = ['ResNet', 'ResNet_lite', 'Bottle_neck_RES_net', 'Bottle_neck_RES_net_lite',
@@ -348,9 +354,9 @@ def main():
     photo_nums = photos(args)
     train, val = chainer.datasets.split_dataset_random(
         photo_nums, int(len(photo_nums) * 0.8), seed=0)  # 2割をvalidation用にとっておく
-    train = chainer.datasets.TransformDataset(
-        train, Transform(args, photo_nums, True, False if args.model == 5 else True))
-    val = chainer.datasets.TransformDataset(val, Transform(args, photo_nums, True, False if args.model == 5 else True))
+    trans = Transform(args, photo_nums, True, False if args.model == 5 else True)
+    train = chainer.datasets.TransformDataset(train, trans)
+    val = chainer.datasets.TransformDataset(val, trans)
 
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
     val_iter = chainer.iterators.SerialIterator(val, args.batchsize,
@@ -425,7 +431,24 @@ def main():
         chainer.serializers.load_npz(args.resume, model, path='updater/model:main/')  # なぜかpathを外すと読み込めなくなってしまった 原因不明
 
     # 学習の実行
-    trainer.run()
+    if args.stream:
+        import concurrent.futures
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        executor.submit(trainer.run)
+
+        def train_download():
+            for num in [train_iter.dataset._dataset[i] for i in train_iter._order]:
+                trans.download(-num)
+                time.sleep(0.02)
+
+        def val_download():
+            for num in train_iter.dataset._dataset[train_iter.dataset._start:]:
+                trans.download(-num)
+                time.sleep(0.02)
+        executor.submit(train_download)
+        executor.submit(val_download)
+    else:
+        trainer.run()
 
 
 if __name__ == '__main__':
