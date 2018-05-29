@@ -152,6 +152,7 @@ class ResNet(chainer.Chain):  # 18-layer
         # chainer.reporter.report({'freq_err': accuracy[4]}, self)  # batchの中で最も多く間違って判断したlabel
 
         if self.lossfunc == 0 and self.n > 50:
+            # momentum
             self.tpk = self.tpk + self.tpv
             self.tpv = 0.8 * self.tpv - 0.002 * (self.tploss[0] - (self.tploss[1] - (1/(1/accuracy[5] + 1/accuracy[6]) - 1))) * (1/accuracy[7] + 1/accuracy[8])
             self.tploss[0] = self.tploss[1] - (1/(1/accuracy[5] + 1/accuracy[6]) - 1)
@@ -166,7 +167,6 @@ class ResNet(chainer.Chain):  # 18-layer
             self.fpv = 0.8 * self.fpv - 0.002 * (self.fploss[0] - (self.fploss[1] - (accuracy[5] - 1))) / accuracy[7]
             self.fploss[0] = self.fploss[1] - (accuracy[7] - 1)
             self.fploss[1] = accuracy[7] - 1
-            print(self.tpk, self.fnk, self.fpk)
         return loss
 
     def accuracy(self, y, t):
