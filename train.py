@@ -95,7 +95,7 @@ class Transform(object):
     def __init__(self, args, photo_nums, isTrain=True, isResize=True):
         self.label_variety = args.label_variety
         self.size = args.size
-        self.data_folder = 'testdata/' + args.object + '_images/'
+        self.data_folder = 'data/' + args.object + '_images/'
         self.isTrain = isTrain
         self.isResize = isResize
         self.stream = args.stream
@@ -266,7 +266,7 @@ def photos(args):
     if args.cleanup and args.object != 'test':  # 指定された場合 真っ白なファイルなどを除外する
         removed = []
         for i in photo_nums:
-            if cleanup(data_folder, i, photo_nums):
+            if cleanup(data_folder, i):
                 photo_nums.remove(i)
                 removed.append(i)
         # 見つかった除外対象写真一覧を保存
@@ -417,12 +417,6 @@ def main():
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration', 'main/loss', 'val/loss',
          'main/acc', 'val/acc', 'main/acc2', 'val/acc2','main/f1', 'val/f1', 'elapsed_time']))
-    # trainer.extend(extensions.PrintReport(
-    #     ['epoch', 'iteration', 'main/loss', 'val/loss',
-    #      'main/acc', 'val/acc', 'main/acc2', 'val/acc2',
-    #      'main/acc_66', 'main/f1', 'val/f1',
-    #      'main/freq_err', 'val/freq_err', 'elapsed_time'
-    #      ]))
 
     # プログレスバー表示の設定
     trainer.extend(extensions.ProgressBar(update_interval=args.interval))
