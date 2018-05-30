@@ -151,12 +151,12 @@ class ResNet(chainer.Chain):  # 18-layer
             self.n += 1
             if self.n >= 10:
                 self.n = 0
-                self.fpk = min(self.fpk / 0.9, 40)
+                self.fpk = min(self.fpk * 0.9, 40)
         elif not (self.n is None) and accuracy[9].data >= siggma + siggma / np.log(1 + t.shape[0]):
             self.n -= 1
             if self.n <= -10:
                 self.n = 0
-                self.fpk = max(self.fpk * 0.9, 0.1)
+                self.fpk = max(self.fpk / 0.9, 0.1)
         return loss
 
     def accuracy(self, y, t):
