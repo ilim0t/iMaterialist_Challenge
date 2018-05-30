@@ -184,7 +184,7 @@ class Transform(object):
 
         array_img = self.zscore(array_img)
         # mpl.pyplot.imshow(array_img)  # 表示
-        if self.model == 6:
+        if self.model == 6 or self.model == 7:
             array_img = L.model.vision.vgg.prepare(array_img)
         else:
             array_img = array_img.transpose(2, 0, 1).astype(np.float32)
@@ -385,8 +385,9 @@ def main():
         3: 'Bottle_neck_RES_net_lite',
         4: 'Mymodel',
         5: 'RES_SPP_net',
-        6: 'FineVGG',
-        7: 'Lite'
+        6: 'VGGTrans',
+        7: 'RESNetTrans',
+        8: 'Lite'
     }[args.model]
 
     print('GPU: {}'.format(args.gpu))
@@ -440,7 +441,7 @@ def main():
     evaluator.trigger = 1, 'epoch'
     trainer.extend(evaluator)
 
-    if args.model == 6:
+    if args.model == 6 or args.model == 7:
         model.base.disable_update()
 
     # モデルの層をdotファイルとして出力する設定
@@ -487,9 +488,7 @@ def main():
     # プログレスバー表示の設定
     trainer.extend(extensions.ProgressBar(update_interval=args.interval))
 
-    # shift = MyShift("lr", 1 / 5, logreport, 0.1)
-    # trainer.extend(shift)
-    # model.shift = shift
+    # trainer.extend(MyShift("lr", 1 / 5, logreport, 0.1))
 
     # 学習済みデータの読み込み設定
     if args.resume:

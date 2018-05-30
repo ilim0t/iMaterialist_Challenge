@@ -120,7 +120,7 @@ class ResNet(chainer.Chain):  # 18-layer
         if not hasattr(self, 'n'):
             self.n = -15
             self.fnk = np.e
-            self.fpk = np.e / (0.9 ** 13)
+            self.fpk = np.e
             self.tpk = np.e
         if self.lossfunc == 0 or self.lossfunc == -1:
             tpk = - np.log(self.tpk)
@@ -135,21 +135,22 @@ class ResNet(chainer.Chain):  # 18-layer
 
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y.data, t)
+        self.n += 1
+        if self.n == 35:
+            self.base.enable_update()
 
-        siggma = 5.836
-        if accuracy[9].data > siggma:
-            self.n += 1
-            if self.n >= 20:
-                self.n = 0
-                # self.shift.n = 0
-                self.fpk = min(self.fpk / 0.9, 40)
-        elif accuracy[9].data < siggma:
-            self.n -= 1
-            if self.n <= -20:
-                self.n = 0
-                self.n = 0
-                # self.shift.n = 0
-                self.fpk = max(self.fpk * 0.9, 0.1)
+        # siggma = 5.836
+        # if accuracy[9].data > siggma:
+        #     self.n += 1
+        #     if self.n >= 20:
+        #         self.n = 0
+        #         self.fpk = min(self.fpk / 0.9, 40)
+        # elif accuracy[9].data < siggma:
+        #     self.n -= 1
+        #     if self.n <= -20:
+        #         self.n = 0
+        #         self.n = 0
+        #         self.fpk = max(self.fpk * 0.9, 0.1)
 
         chainer.reporter.report({'fpk': self.fpk}, self)
         chainer.reporter.report({'acc': accuracy[0]}, self)  # dataひとつひとつのlabelが完全一致している確率
@@ -506,7 +507,20 @@ class Lite(ResNet):
         h = self.fc(h)
         return F.tanh(h)
 
-class FineVGG(ResNet):
+class RESNetTrans(ResNet):
+    def __init__(self, n_out, lossfunc=0):
+        self.lossfunc = lossfunc
+        initializer = chainer.initializers.HeNormal()
+        super(ResNet, self).__init__()
+        with self.init_scope():
+            self.base = L.ResNet50Layers()
+            self.l = L.Linear(n_out, initialW=initializer)
+
+    def __call__(self, x):
+        h = self.base(x, layers=['fc6'])
+        return F.tanh(self.l(h['fc6']))
+
+class VGGTrans(ResNet):
     def __init__(self, n_out, lossfunc=0):
         self.lossfunc = lossfunc
         initializer = chainer.initializers.HeNormal()
