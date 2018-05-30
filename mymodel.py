@@ -30,10 +30,10 @@ class Res_block(chainer.Chain):
         h = self.bn3(h)  # 必要?
 
         if x.shape[2:] != h.shape[2:]:  # skipではないほうのデータの縦×横がこのblock中で小さくなっていた場合skipの方もそれに合わせて小さくする
-            #x = F.average_pooling_2d(x, 1, 2)  # これでいいのか？
+            # x = F.average_pooling_2d(x, 1, 2)  # これでいいのか？
             x = self.xconv(x)
         if x.shape[1] != h.shape[1]:  # skipではない方のデータのチャンネル数がこのblock内で増えている場合skipの方もそれに合わせて増やす(zero-padding)
-            xp = chainer.cuda.get_array_module(x.data)  # GPCが使える場合も想定
+            xp = chainer.cuda.get_array_module(x.data)  # GPUが使える場合も想定
             p = chainer.Variable(xp.zeros((x.shape[0], h.shape[1] - x.shape[1], *x.shape[2:]), dtype=xp.float32))
             x = F.concat((x, p))
         return x + h
@@ -61,7 +61,7 @@ class ResNet(chainer.Chain):  # 18-layer
             self.block4_1 = Res_block(512, 3, 256, init_stride=2, pad=1)
             self.block4_2 = Res_block(512, 3, pad=1)
 
-            #self.l1 = L.Linear(1000, initialW=initializer)
+            # self.l1 = L.Linear(1000, initialW=initializer)
             self.l2 = L.Linear(n_out, initialW=initializer)
 
     def __call__(self, x):             # => 3   × 256
@@ -105,11 +105,11 @@ class ResNet(chainer.Chain):  # 18-layer
             |Y_i|行列  = t_card = F.sum(t.astype("f"), axis=1)
             |Y[bar]_i|行列 = t.shape[1] - t_card
             
-             Σ exp(-(C_k-C_l))
+             Σ exp(-(C_k-C_l))   [iを固定]
             =Σ exp(-C_k+C_l)
             =Σ exp(-C_k)*exp(C_l)
             =(exp(-C_k1), exp(-C_k2), ...) * (exp(C_l1), exp(C_l2), ...)
-            =(exp(-x) dot [1 if x∈Y else 0]) * (exp(x)行列 dot [0 if x∈Y else 1])
+            =(exp(-x)行列 dot [1 if x∈Y else 0]) * (exp(x)行列 dot [0 if x∈Y else 1])
             =F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1)
             
             ( TP  + FN ) * ( TN  + FP )
@@ -117,14 +117,12 @@ class ResNet(chainer.Chain):  # 18-layer
             
             ∴loss = loss += F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) / (t_card * (t.shape[1] - t_card)))
             """
-        if not hasattr(self, 'n'):
-            self.n = -15
-            self.fnk = np.e
-            self.fpk = np.e
-            self.tpk = np.e
+        if not hasattr(self, 'fpk'):
+            # self.n = -15
+            self.fpk = 7.5
         if self.lossfunc == 0 or self.lossfunc == -1:
-            tpk = - np.log(self.tpk)
-            fnk = np.log(self.fnk)
+            tpk = - 1
+            fnk = 1
             tnk = - 1
             fpk = np.log(self.fpk)  # np.log(20 - 20 * self.a/100 + np.e)
             t_card = F.sum(t.astype("f"), axis=1)
@@ -135,9 +133,6 @@ class ResNet(chainer.Chain):  # 18-layer
 
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y.data, t)
-        self.n += 1
-        if self.n == 35:
-            self.base.enable_update()
 
         # siggma = 5.836
         # if accuracy[9].data > siggma:

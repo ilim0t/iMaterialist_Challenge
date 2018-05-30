@@ -375,6 +375,15 @@ def main():
                         help='画像ダウンロードを並列処理するか')
     args = parser.parse_args()
 
+    # args.model = -1
+    # args.batchsize = 8
+    args.size = 224
+    # args.interval = 1
+    # args.cleanup = False
+    # args.lossfunc = 3
+    # # args.stream = True
+    # # args.total_photo_num = 200
+    # args.resume = 'serverresult/snapshot_iter_74'
 
     # liteがついているのはsizeをデフォルトの半分にするの前提で作っています
     # RES_SPP_netはchainerで可変量サイズの入力を実装するのが難しかったので頓挫
