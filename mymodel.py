@@ -89,6 +89,8 @@ class ResNet(chainer.Chain):  # 18-layer
     def loss_func(self, x, t):
         y = self.__call__(x)
         loss = 0
+        if self.lossfunc == 3 or self.lossfunc == 4:
+            loss += F.sigmoid_cross_entropy((y + 1) / 2, t)
         if self.lossfunc == 1 or self.lossfunc == -1:
             TP = F.sum((y + 1) * 0.5 * t, axis=1)
             FP = F.sum((y + 1) * 0.5 * (1 - t), axis=1)
@@ -97,7 +99,7 @@ class ResNet(chainer.Chain):  # 18-layer
             # recall = TP / (TP + FN)
             loss += 1 - F.average(2 * TP / (2 * TP + FP + FN))  # F1 scoreを元に
 
-        if self.lossfunc == 2:
+        if self.lossfunc == 2 or self.lossfunc == 4:
             t_card = F.sum(t.astype("f"), axis=1)
             loss += F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) /
                               (t_card * (t.shape[1] - t_card)))  # https://ieeexplore.ieee.org/document/1683770/ (3)式を変形
