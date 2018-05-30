@@ -50,6 +50,48 @@ warnings.filterwarnings('ignore', category=urllib3.exceptions.InsecureRequestWar
 # scipy
 
 
+class MyShift(chainer.training.extensions.LinearShift):
+    def __init__(self, attr, rate, logreport, init=None, optimizer=None):
+        self._attr = attr
+        if rate < 0:
+            raise ValueError('ExponentialShift does not support negative rate')
+        self._rate = rate
+        self.logreport = logreport
+        self._init = init
+        self._optimizer = optimizer
+        self._t = 0
+        self.n = -20
+        self._last_value = None
+
+    def __call__(self, trainer):
+        self._t += 1
+        self.n += 1
+        optimizer = self._get_optimizer(trainer)
+        value = self._compute_next_value(optimizer)
+        self._update_value(optimizer, value)
+
+    def initialize(self, trainer):
+        optimizer = self._get_optimizer(trainer)
+        # ensure that _init is set
+        if self._init is None:
+            self._init = getattr(optimizer, self._attr)
+
+        if self._last_value is not None:  # resuming from a snapshot
+            self._update_value(optimizer, self._last_value)
+        else:
+            self._update_value(optimizer, self._init)
+
+    def _compute_next_value(self, optimizer):
+        time.sleep(1)
+        if self.n < 20:
+            return self._last_value
+        if np.corrcoef([range(20), [i['main/loss'] for i in self.logreport.log[-20:]]])[0][1] > -0.2:  # 相関係数
+            print("!!!!レート下げたよ!!!!相関係数:", np.corrcoef([range(10), [i['main/loss'] for i in self.logreport.log[-20:]]])[0][1])
+            self.n = 0
+            return self._last_value * self._rate
+        return self._last_value
+
+
 class MyEvaluator(extensions.Evaluator):
     """
     chainer標準のEvaliator(testデータの評価出力)で
@@ -104,6 +146,7 @@ class Transform(object):
         self.isResize = isResize
         self.stream = args.stream
         self.cleanup = args.cleanup
+        self.model = args.model
 
         if not os.path.exists(self.data_folder):
             os.makedirs(self.data_folder)
@@ -141,8 +184,10 @@ class Transform(object):
 
         array_img = self.zscore(array_img)
         # mpl.pyplot.imshow(array_img)  # 表示
-
-        array_img = array_img.transpose(2, 0, 1).astype(np.float32)
+        if self.model == 6:
+            array_img = L.model.vision.vgg.prepare(array_img)
+        else:
+            array_img = array_img.transpose(2, 0, 1).astype(np.float32)
         if not self.isTrain:
             return array_img
 
@@ -292,6 +337,7 @@ def cleanup(data_folder, photo_num):
         return True
     return False
 
+
 def main():
     # 各種パラメータ設定
     parser = argparse.ArgumentParser(description='iMaterialist_Challenge:')
@@ -332,8 +378,16 @@ def main():
 
     # liteがついているのはsizeをデフォルトの半分にするの前提で作っています
     # RES_SPP_netはchainerで可変量サイズの入力を実装するのが難しかったので頓挫
-    model = ['ResNet', 'ResNet_lite', 'Bottle_neck_RES_net', 'Bottle_neck_RES_net_lite',
-             'Mymodel', 'RES_SPP_net', 'Lite'][args.model]
+    model = {
+        0: 'ResNet',
+        1: 'ResNet_lite',
+        2: 'Bottle_neck_RES_net',
+        3: 'Bottle_neck_RES_net_lite',
+        4: 'Mymodel',
+        5: 'RES_SPP_net',
+        6: 'FineVGG',
+        7: 'Lite'
+    }[args.model]
 
     print('GPU: {}'.format(args.gpu))
     print('# Minibatch-size: {}'.format(args.batchsize))
@@ -386,6 +440,9 @@ def main():
     evaluator.trigger = 1, 'epoch'
     trainer.extend(evaluator)
 
+    if args.model == 6:
+        model.base.disable_update()
+
     # モデルの層をdotファイルとして出力する設定
     trainer.extend(extensions.dump_graph('main/loss'))
 
@@ -394,7 +451,8 @@ def main():
     trainer.extend(extensions.snapshot(), trigger=(frequency, 'epoch'))
 
     # trainデータでの評価の表示頻度設定
-    trainer.extend(extensions.LogReport(trigger=(args.interval, 'iteration')))
+    logreport = extensions.LogReport(trigger=(args.interval, 'iteration'))
+    trainer.extend(logreport)
 
     # 各データでの評価の保存設定
     if extensions.PlotReport.available():
@@ -421,11 +479,17 @@ def main():
 
     # 各データでの評価の表示(欄に関する)設定
     trainer.extend(extensions.PrintReport(
-        ['epoch', 'iteration', 'main/loss', 'val/loss','main/acc', 'val/acc', 'main/acc2', 'val/acc2',
-         'main/precision', 'main/recall', 'main/f1', 'val/f1', 'main/labelnum','elapsed_time']))
+        ['epoch', 'iteration', 'main/loss', 'val/loss', 'main/acc', 'main/acc2', 'val/acc2',
+         'main/precision', 'main/recall', 'main/f1', 'val/f1', 'main/labelnum', 'main/fpk', 'elapsed_time']))
+        # ['epoch', 'iteration', 'main/loss', 'val/loss','main/acc', 'val/acc', 'main/acc2', 'val/acc2',
+        #  'main/precision', 'main/recall', 'main/f1', 'val/f1', 'main/labelnum', 'main/tpk', 'elapsed_time']))
 
     # プログレスバー表示の設定
     trainer.extend(extensions.ProgressBar(update_interval=args.interval))
+
+    # shift = MyShift("lr", 1 / 5, logreport, 0.1)
+    # trainer.extend(shift)
+    # model.shift = shift
 
     # 学習済みデータの読み込み設定
     if args.resume:

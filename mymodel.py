@@ -89,7 +89,7 @@ class ResNet(chainer.Chain):  # 18-layer
     def loss_func(self, x, t):
         y = self.__call__(x)
         loss = 0
-        if self.lossfunc == 1:
+        if self.lossfunc == 1 or self.lossfunc == -1:
             TP = F.sum((y + 1) * 0.5 * t, axis=1)
             FP = F.sum((y + 1) * 0.5 * (1 - t), axis=1)
             FN = F.sum((1 - y) * 0.5 * t, axis=1)
@@ -117,16 +117,16 @@ class ResNet(chainer.Chain):  # 18-layer
             
             ∴loss = loss += F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) / (t_card * (t.shape[1] - t_card)))
             """
-        if self.lossfunc == 0:
+        if self.lossfunc == 0 or self.lossfunc == -1:
             if not hasattr(self, 'n'):
-                self.n = None
+                self.n = -15
                 self.fnk = np.e
-                self.fpk = np.e/(0.9 ** 14)
+                self.fpk = np.e / (0.9 ** 13)
                 self.tpk = np.e
             tpk = - np.log(self.tpk)
             fnk = np.log(self.fnk)
             tnk = - 1
-            fpk = np.log(self.fpk)  # np.log(20 - 20 * self.a/100 + np.e)  # 5.836
+            fpk = np.log(self.fpk)  # np.log(20 - 20 * self.a/100 + np.e)
             t_card = F.sum(t.astype("f"), axis=1)
             loss += F.average(
                 F.sum(t * F.exp((y*(tpk - fnk) + tpk + fnk) / 2), axis=1) *
@@ -135,6 +135,23 @@ class ResNet(chainer.Chain):  # 18-layer
 
         chainer.reporter.report({'loss': loss}, self)
         accuracy = self.accuracy(y.data, t)
+
+        siggma = 5.836
+        if accuracy[9].data > siggma:
+            self.n += 1
+            if self.n >= 20:
+                self.n = 0
+                # self.shift.n = 0
+                self.fpk = min(self.fpk / 0.9, 40)
+        elif accuracy[9].data < siggma:
+            self.n -= 1
+            if self.n <= -20:
+                self.n = 0
+                self.n = 0
+                # self.shift.n = 0
+                self.fpk = max(self.fpk * 0.9, 0.1)
+
+        chainer.reporter.report({'fpk': self.fpk}, self)
         chainer.reporter.report({'acc': accuracy[0]}, self)  # dataひとつひとつのlabelが完全一致している確率
         chainer.reporter.report({'acc2': accuracy[1]}, self)  # すべてのbatchを通してlabelそれぞれの正解確率の平均
         # chainer.reporter.report({'acc_66': accuracy[2]}, self)  # 66番ラベルの正解率
@@ -143,20 +160,6 @@ class ResNet(chainer.Chain):  # 18-layer
         chainer.reporter.report({'f1': accuracy[3]}, self)
         chainer.reporter.report({'labelnum': accuracy[9]}, self)
         # chainer.reporter.report({'freq_err': accuracy[4]}, self)  # batchの中で最も多く間違って判断したlabel
-
-        siggma = 5.836
-        if self.n is None and accuracy[9].data <= 7:
-            self.n = 1
-        elif not (self.n is None) and accuracy[9].data <= siggma - siggma / np.log(1 + t.shape[0]):
-            self.n += 1
-            if self.n >= 10:
-                self.n = 0
-                self.fpk = min(self.fpk * 0.9, 40)
-        elif not (self.n is None) and accuracy[9].data >= siggma + siggma / np.log(1 + t.shape[0]):
-            self.n -= 1
-            if self.n <= -10:
-                self.n = 0
-                self.fpk = max(self.fpk / 0.9, 0.1)
         return loss
 
     def accuracy(self, y, t):
@@ -502,3 +505,20 @@ class Lite(ResNet):
         h = self.bn(h)
         h = self.fc(h)
         return F.tanh(h)
+
+class FineVGG(ResNet):
+    def __init__(self, n_out, lossfunc=0):
+        self.lossfunc = lossfunc
+        initializer = chainer.initializers.HeNormal()
+        super(ResNet, self).__init__()
+        with self.init_scope():
+            self.base = L.VGG16Layers()
+            self.l1 = L.Linear(4096, initialW=initializer)
+            self.l2 = L.Linear(4096, initialW=initializer)
+            self.l3 = L.Linear(n_out, initialW=initializer)
+
+    def __call__(self, x):
+        h = self.base(x, layers=['pool5'])
+        h = F.relu(self.l1(h['pool5']))
+        h = F.relu(self.l2(h))
+        return F.tanh(self.l3(h))
