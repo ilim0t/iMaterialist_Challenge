@@ -117,12 +117,12 @@ class ResNet(chainer.Chain):  # 18-layer
             
             ∴loss = loss += F.average(F.sum(t * F.exp(- y), axis=1) * F.sum((1 - t) * F.exp(y), axis=1) / (t_card * (t.shape[1] - t_card)))
             """
+        if not hasattr(self, 'n'):
+            self.n = -15
+            self.fnk = np.e
+            self.fpk = np.e / (0.9 ** 13)
+            self.tpk = np.e
         if self.lossfunc == 0 or self.lossfunc == -1:
-            if not hasattr(self, 'n'):
-                self.n = -15
-                self.fnk = np.e
-                self.fpk = np.e / (0.9 ** 13)
-                self.tpk = np.e
             tpk = - np.log(self.tpk)
             fnk = np.log(self.fnk)
             tnk = - 1
